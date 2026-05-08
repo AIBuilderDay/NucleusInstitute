@@ -1,0 +1,28 @@
+# Local Postgres for the Nucleus backend.
+#
+# Why port 5433: there's another HEAL Postgres already running on 5432.
+# Bring up:   docker compose up -d
+# Tear down:  docker compose down            (preserves data)
+# Hard reset: docker compose down -v         (wipes volume; seed re-runs on next app boot)
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: nucleus-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nucleus
+      POSTGRES_PASSWORD: nucleus
+      POSTGRES_DB: nucleus
+    ports:
+      - "5433:5432"
+    volumes:
+      - nucleus_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nucleus -d nucleus"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  nucleus_pgdata:

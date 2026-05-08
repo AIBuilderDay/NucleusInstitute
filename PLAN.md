@@ -387,12 +387,14 @@ Final score = weighted sum. Reasons are emitted for each dimension that scored �
 - [x] `provider/matching/base.py` — abstract `MatchingProvider` + `@register_matcher` decorator + `get_matcher` lookup
 - [x] `provider/matching/rule_filter.py` — RuleFilterMatcher (hard filters: availability/role/comp/location; 7-dim soft scoring: role/sector/stage/skills/mission/location/risk; per-role-category weight overrides for mentor/advisor/board/student/intern)
 - [x] `provider/matching/__init__.py` — imports rule_filter so registry hydrates on package import
-- [ ] `service/talent_service.py`, `service/startup_service.py` — CRUD wrappers around DAOs
-- [ ] `service/matching_service.py` — fetches profiles via DAO, picks provider via registry, calls it, returns ranked list
-- [ ] `api/health.py`, `api/talent.py`, `api/startup.py`, `api/match.py` — incl. `/match/.../compare` running all matchers in parallel
-- [ ] `main.py` — FastAPI app, CORS, lifespan that runs `init_db()` + optional seed, register routers
-- [ ] `seed/utah_synthetic.py` — 8–10 talent + 8–10 startup profiles spanning all sectors + roles
-- [ ] Smoke test: `uv run uvicorn`, POST a profile, hit `/match/talent/{id}`, sanity-check ranking
+- [x] `service/talent_service.py`, `service/startup_service.py` — CRUD wrappers around DAOs
+- [x] `service/matching_service.py` — fetches profiles via DAO, picks provider via registry, calls it, returns ranked list. Includes `compare_*` methods that run all registered matchers in parallel.
+- [x] `api/health.py`, `api/talent.py`, `api/startup.py`, `api/match.py` — match.py exposes `/match/talent/{id}`, `/match/startup/{id}`, and `/match/.../compare` for the demo
+- [x] `main.py` — FastAPI app, CORS, lifespan that runs `init_db()` + optional seed, registers routers under `/api/v1` (health is unprefixed)
+- [x] **Seed JSON** at `backend/data/seed/nucleus_seed.json` — 36 talents (across all 9 RoleCategory values × 8 sectors × all 5 Nucleus networks) + 12 startups (every sector represented, varied stages and needs). Loaded by `app/seed/utah_synthetic.py` on startup if both tables empty. Persistent across `docker compose down -v` because the JSON lives in the repo.
+- [x] `docker-compose.yml` at repo root — Postgres 16 on port 5433 (avoids conflict with existing pg on 5432), volume `nucleus_pgdata`, health check.
+- [x] `.gitignore` — keeps `.env`, `.venv`, caches out of version control.
+- [x] **Smoke test (live):** booted Postgres + uvicorn on `127.0.0.1:8765`, app seeded 36 talents + 12 startups, `/health` returned `available_matchers: ["rule_filter"]`, `/api/v1/match/talent/{id}` ranked HelixCura first for Marcus Chen (life sciences fractional CFO) with full dimension breakdown, BioFortis correctly hard-filtered with `Salary gap: $150,000 > $140,000`, reverse-direction `/match/startup/{id}` and `/compare` both return correct shapes, `/docs` Swagger UI returns 200.
 
 ---
 
@@ -454,3 +456,4 @@ These are explicitly **out of scope** for the current slice but listed so we don
 - **2026-05-08 nucleus-network discovery** — fetched live <https://www.nucleusutah.org/contact>; discovered Nucleus actually operates **5 named networks** (operator / mentor / sme_advisor / venture / service_provider) — investors and service providers were missing from the hackathon spec. Added `NucleusNetwork` enum + `investor` / `service_provider` to `RoleCategory` + investor/service-provider needs to Startup card. Inspiration source pinned in §3.
 - **2026-05-08 stack pin** — locked `uv` as the only Python toolchain (no pip/poetry/pipx). Locked `python_sentry_logger_wrapper` (PyPI: `sentry-struct-logger`) as the logger to mirror the template. Pinned NUCLEUS as the 1Password vault name in HEAL Engineering 1P org for any future secret loading.
 - **2026-05-08 build progress** — completed Phase 1 through RuleFilterMatcher inclusive: scaffold + config + DB connection + ORM (Talent, Startup with JSONB fields) + Pydantic schemas + DAOs + DAOFactory + abstract matcher base with registry + RuleFilterMatcher with hard filters and per-role-category weighted soft scoring. Remaining for slice 1: services, routes, main.py, seed, smoke test.
+- **2026-05-08 phase 1 complete** — services + routes + main.py + JSON-backed seeder (36 talents, 12 startups) + docker-compose for Postgres + .gitignore. **Backend running live on 127.0.0.1:8765**; verified end-to-end: hard filters block correctly with explanatory blocker messages, soft scoring ranks intuitively across both directions, `/match/.../compare` returns per-matcher results in parallel, dimension breakdown preserved on blocked matches for the future gap-analyzer UI. Three runtime bugs surfaced and fixed during smoke test (predicted in THINGS2NOTE): `get_logger` signature is `service_name` not `name` and `log_level` is int; missing `pydantic[email]` dep for `EmailStr`; missing `sqlalchemy[asyncio]`/greenlet dep.

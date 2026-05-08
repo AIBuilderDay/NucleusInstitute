@@ -7,6 +7,7 @@ Mirrors the HEAL FastAPI template (`fastapi-1password-template`):
   Sentry DSN added to `.env` automatically routes errors to Sentry.
 """
 
+import logging
 from typing import Any
 from urllib.parse import quote_plus
 
@@ -82,7 +83,21 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Map our string log_level (info/debug/warning/error) to the int constants
+# the wrapper expects. Mirrors fastapi-1password-template/backend/app/core/config.py.
+_log_level_map = {
+    "debug": logging.DEBUG,
+    "info": logging.INFO,
+    "warning": logging.WARNING,
+    "error": logging.ERROR,
+}
+_resolved_level = _log_level_map.get(settings.log_level.lower(), logging.INFO)
+
 settings.logger = get_logger(
-    name="nucleus",
-    log_level=settings.log_level,
+    service_name=settings.app_name,
+    log_level=_resolved_level,
+    sentry_dsn=settings.sentry_dsn,
+    sentry_environment=settings.sentry_environment,
+    sentry_sample_rate=settings.sentry_sample_rate,
 )
