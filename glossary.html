@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Nucleus Matching Glossary</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --panel-2: #334155;
+    --border: #475569;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --accent-2: #a78bfa;
+    --good: #4ade80;
+    --warn: #fbbf24;
+    --bad: #f87171;
+    --code-bg: #0b1220;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 48px 24px 96px; }
+  header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 24px;
+    margin-bottom: 32px;
+  }
+  header h1 {
+    margin: 0 0 8px;
+    font-size: 2.2rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  header p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 1.05rem;
+  }
+  nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 24px 0 0;
+    padding: 16px;
+    background: var(--panel);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+  }
+  nav a {
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 0.9rem;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: var(--panel-2);
+    transition: background 0.15s;
+  }
+  nav a:hover { background: var(--border); }
+  section { margin: 56px 0 0; }
+  h2 {
+    font-size: 1.5rem;
+    border-left: 4px solid var(--accent);
+    padding-left: 12px;
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+  }
+  h3 {
+    font-size: 1.1rem;
+    color: var(--accent-2);
+    margin: 28px 0 8px;
+  }
+  .lede {
+    color: var(--muted);
+    margin: 0 0 24px;
+    font-size: 1rem;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 22px;
+    margin: 12px 0;
+  }
+  .card h4 {
+    margin: 0 0 6px;
+    font-size: 1.05rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .card p { margin: 6px 0; }
+  .card p:last-child { margin-bottom: 0; }
+  code {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+    font-size: 0.88em;
+    color: #fde68a;
+  }
+  .kv { color: var(--muted); font-size: 0.92rem; }
+  .kv strong { color: var(--text); }
+  .pill {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    margin-right: 4px;
+  }
+  .pill.weight {
+    background: rgba(56, 189, 248, 0.15);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .pill.hard { background: rgba(248, 113, 113, 0.15); border-color: var(--bad); color: var(--bad); }
+  .pill.soft { background: rgba(74, 222, 128, 0.15); border-color: var(--good); color: var(--good); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    background: var(--panel);
+    border-radius: 8px;
+    overflow: hidden;
+    font-size: 0.92rem;
+  }
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    background: var(--panel-2);
+    font-weight: 600;
+    color: var(--accent);
+  }
+  tr:last-child td { border-bottom: none; }
+  td code { font-size: 0.85em; }
+  .grid-2 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+  }
+  .formula {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 0.88rem;
+    color: #c5d2e0;
+    white-space: pre;
+    overflow-x: auto;
+    margin: 12px 0;
+  }
+  .example {
+    border-left: 3px solid var(--accent-2);
+    background: rgba(167, 139, 250, 0.06);
+    padding: 12px 16px;
+    margin: 10px 0;
+    border-radius: 0 8px 8px 0;
+    font-size: 0.94rem;
+  }
+  .example strong { color: var(--accent-2); }
+  footer {
+    margin-top: 80px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 0.88rem;
+    text-align: center;
+  }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Nucleus Matching — Plain-English Glossary</h1>
+  <p>What every category, enum, and dimension means in the talent ↔ startup matcher.</p>
+  <nav>
+    <a href="#big-picture">Big picture</a>
+    <a href="#networks">5 Networks</a>
+    <a href="#roles">Role categories</a>
+    <a href="#how-matching-works">How matching works</a>
+    <a href="#hard-filters">Hard filters</a>
+    <a href="#dimensions">7 Scoring dimensions</a>
+    <a href="#enums">All enums</a>
+    <a href="#match-card">Match card anatomy</a>
+  </nav>
+</header>
+
+<!-- ============================================================ -->
+<section id="big-picture">
+<h2>The big picture</h2>
+<p class="lede">Nucleus connects two sides of Utah's deep-tech ecosystem.</p>
+
+<div class="card">
+  <h4>Talent</h4>
+  <p>People who want to plug into a startup — execs, operators, students, interns, advisors, mentors, board members, investors, service providers. Each one has a profile describing what they want, what they bring, and what they expect (comp, location, risk).</p>
+</div>
+
+<div class="card">
+  <h4>Startups</h4>
+  <p>Utah companies (life sciences, AI, defense/aerospace, cyber, energy, advanced manufacturing, fintech, software). Each has a profile describing their stage, who they need, what they pay, what skills they require.</p>
+</div>
+
+<div class="card">
+  <h4>The matcher</h4>
+  <p>Given a person, rank the startups that fit best (and vice versa). Phase 1 uses pure rules — no AI yet. Future matchers will add embeddings and an agentic Claude-driven matcher, but they'll all return the same shape so the UI doesn't change.</p>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="networks">
+<h2>The 5 Nucleus Networks</h2>
+<p class="lede">When someone signs up at <code>nucleusutah.org/contact</code>, they pick one of these five named networks. It's the user's self-declared bucket — separate from <em>role category</em>, which is finer-grained.</p>
+
+<div class="grid-2">
+  <div class="card">
+    <h4>Operator <span class="pill">operator</span></h4>
+    <p>Execs and senior operators looking for full-time or fractional roles at a startup. Think: a VP Sales who wants to be a fractional CRO at three pre-seed companies.</p>
+  </div>
+  <div class="card">
+    <h4>Mentor <span class="pill">mentor</span></h4>
+    <p>Informal, time-flexible. Volunteers who'll grab coffee with a founder once a month. No pay, no equity expected.</p>
+  </div>
+  <div class="card">
+    <h4>SME Advisor <span class="pill">sme_advisor</span></h4>
+    <p>Formal subject-matter expert on an advisory board. Specialized in AI / energy / life sciences / aerospace / defense / cyber / advanced manufacturing. Often paid in equity.</p>
+  </div>
+  <div class="card">
+    <h4>Venture <span class="pill">venture</span></h4>
+    <p>Angel investors and active VCs focused on Utah deep tech. Matched by check size, stage, sector, lead vs. follow.</p>
+  </div>
+  <div class="card">
+    <h4>Service Provider <span class="pill">service_provider</span></h4>
+    <p>Creative / legal / operational / technical service firms supporting startups. Often offer startup-friendly terms (deferred billing, equity for services).</p>
+  </div>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="roles">
+<h2>Role categories</h2>
+<p class="lede">Finer than networks. <code>role_category</code> is what drives <em>which weights and which hard filters</em> apply during matching. A mentor and an executive get scored very differently even if they pick the same sectors.</p>
+
+<table>
+  <thead><tr><th>Value</th><th>Meaning</th><th>Special matcher behavior</th></tr></thead>
+  <tbody>
+    <tr><td><code>executive</code></td><td>C-suite or senior leader looking for a role.</td><td>Default weights. All hard filters apply.</td></tr>
+    <tr><td><code>operator</code></td><td>Hands-on senior individual contributor / manager.</td><td>Default weights. All hard filters apply.</td></tr>
+    <tr><td><code>student</code></td><td>Currently enrolled, looking for project / part-time.</td><td>Sector + skills + mission + location weighted higher than role. Lower comp expectations assumed.</td></tr>
+    <tr><td><code>intern</code></td><td>Same scoring profile as student.</td><td>Same as student.</td></tr>
+    <tr><td><code>board_member</code></td><td>Serves on a startup's board.</td><td>Stage and sector dominate. Skills basically ignored.</td></tr>
+    <tr><td><code>advisor</code></td><td>Formal advisor (paid in equity).</td><td>Role + sector + mission + stage. <strong>No salary filter.</strong></td></tr>
+    <tr><td><code>mentor</code></td><td>Informal, free-of-charge.</td><td>Only sector + mission scored. <strong>Compensation filter is skipped entirely.</strong></td></tr>
+    <tr><td><code>investor</code></td><td>Writes checks.</td><td>⚠️ Currently uses default weights as a placeholder. Real <code>VentureMatcher</code> is TO-DO — should match on check size, stage, lead/follow.</td></tr>
+    <tr><td><code>service_provider</code></td><td>Sells services to startups.</td><td>⚠️ Same — placeholder. Real <code>ServiceMatcher</code> is TO-DO — should match on service type and stages served.</td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ============================================================ -->
+<section id="how-matching-works">
+<h2>How matching works (Phase 1: RuleFilter)</h2>
+<p class="lede">Two stages. First we drop impossible matches outright (hard filters). Then, for the survivors, we score on seven dimensions and weight them by role category.</p>
+
+<div class="formula">Stage A: Hard filters    →  pass / fail (with a "blocker" message if failed)
+Stage B: Soft scoring    →  for each survivor, weighted sum of 0.0–1.0 dimension scores
+Final:    score 0.0–1.0  +  reasons[] (why it matched)  +  blockers[] (why it didn't)</div>
+
+<p>Every dimension that scores ≥ 0.5 emits a human-readable reason ("Strong sector overlap: AI"). Those become the bullet points on the match card. Hard-filter failures emit blockers ("Salary gap: $150,000 &gt; $140,000").</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="hard-filters">
+<h2>Hard filters (the eliminators)</h2>
+<p class="lede">If any of these fail, the match is <strong>removed from the candidate list</strong>. No partial credit.</p>
+
+<div class="card">
+  <h4><span class="pill hard">Hard</span> Availability</h4>
+  <p>The talent's availability (full_time / part_time / fractional / advisory / internship) must be in the startup's <code>availability_open_to</code> list.</p>
+  <div class="example"><strong>Example blocker:</strong> "Availability mismatch: talent wants full_time, startup needs ['fractional']"</div>
+</div>
+
+<div class="card">
+  <h4><span class="pill hard">Hard</span> Role category</h4>
+  <p>The talent's role category (executive / mentor / student / etc.) must be in the startup's <code>role_categories_open_to</code> list. A startup that only wants advisors won't see executives in their results.</p>
+</div>
+
+<div class="card">
+  <h4><span class="pill hard">Hard</span> Compensation type</h4>
+  <p>Skipped entirely for mentors. Otherwise, the talent's <code>comp_expectation_type</code> (salary / equity / salary+equity) must be compatible with what the startup offers.</p>
+  <div class="example"><strong>Example:</strong> talent wants <code>salary</code>, startup only offers <code>equity</code> → blocked.</div>
+</div>
+
+<div class="card">
+  <h4><span class="pill hard">Hard</span> Minimum salary</h4>
+  <p>Only applies when the talent expects salary or salary+equity. The startup's <code>comp_max_salary_usd</code> must be at least the talent's <code>comp_min_salary_usd</code>.</p>
+  <div class="example"><strong>Example blocker:</strong> "Salary gap: $150,000 &gt; $140,000" (talent's floor exceeds startup's ceiling).</div>
+</div>
+
+<div class="card">
+  <h4><span class="pill hard">Hard</span> Location</h4>
+  <p>Same state, OR either side has <code>remote_ok = true</code>. So a Salt Lake City startup that's open to remote will still see a Provo candidate; a non-remote startup in California won't see a Utah-only candidate.</p>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="dimensions">
+<h2>The 7 scoring dimensions</h2>
+<p class="lede">Survivors of the hard filters get scored on these. Each yields 0.0–1.0. The final score is the weighted sum (weights depend on role category — see below).</p>
+
+<h3>Default weights (executives, operators, investors, service providers)</h3>
+<table>
+  <thead><tr><th>Dimension</th><th>Weight</th><th>What it measures</th></tr></thead>
+  <tbody>
+    <tr><td><code>role</code></td><td><span class="pill weight">0.25</span></td><td>Title overlap — talent wants CTO, startup needs CTO.</td></tr>
+    <tr><td><code>sector</code></td><td><span class="pill weight">0.20</span></td><td>Sector overlap — talent likes life_sciences, startup is in life_sciences.</td></tr>
+    <tr><td><code>skills</code></td><td><span class="pill weight">0.20</span></td><td>How many required skills the talent covers (+ half-credit for nice-to-haves).</td></tr>
+    <tr><td><code>stage</code></td><td><span class="pill weight">0.10</span></td><td>Talent wants seed-stage companies, startup is seed.</td></tr>
+    <tr><td><code>mission</code></td><td><span class="pill weight">0.10</span></td><td>Mission keyword overlap — both list "climate" or "health".</td></tr>
+    <tr><td><code>location</code></td><td><span class="pill weight">0.10</span></td><td>Same city &gt; same state &gt; remote-compatible.</td></tr>
+    <tr><td><code>risk</code></td><td><span class="pill weight">0.05</span></td><td>Talent's risk tolerance vs. startup's stage. Earlier stage = higher risk.</td></tr>
+  </tbody>
+</table>
+
+<h3>Per-dimension detail</h3>
+
+<div class="card">
+  <h4><span class="pill soft">Dimension</span> Role match</h4>
+  <p><strong>Inputs:</strong> <code>talent.role_titles_seeking</code> (list) ∩ <code>startup.roles_needed</code> (list).</p>
+  <p><strong>Score:</strong> overlap-ratio. If at least one title matches, you get partial credit; full overlap = 1.0.</p>
+  <div class="example"><strong>Reason emitted:</strong> "Role overlap: cto, fractional_exec"</div>
+</div>
+
+<div class="card">
+  <h4><span class="pill soft">Dimension</span> Sector match</h4>
+  <p><strong>Inputs:</strong> <code>talent.sectors_of_interest</code> vs. <code>startup.sector</code> (primary) + <code>startup.sectors_secondary</code>.</p>
+  <p><strong>Score:</strong> 1.0 if you hit the startup's primary sector, 0.6 if only secondary, 0.0 otherwise.</p>
+  <div class="example"><strong>Reason emitted:</strong> "Sector overlap: ai"</div>
+</div>
+
+<div class="card">
+  <h4><span class="pill soft">Dimension</span> Stage match</h4>
+  <p><strong>Inputs:</strong> <code>talent.stage_preference</code> (list) vs. <code>startup.stage</code> (single).</p>
+  <p><strong>Score:</strong> binary. 1.0 if the startup's stage is in the talent's preferred set, 0.0 otherwise. No partial credit for adjacent stages.</p>
+  <div class="example"><strong>Reason emitted:</strong> "Stage match: pre_seed" — meaning the talent wanted pre_seed, and this startup is pre_seed.</div>
+</div>
+
+<div class="card">
+  <h4><span class="pill soft">Dimension</span> Skill match</h4>
+  <p><strong>Inputs:</strong> <code>talent.skills</code> vs. <code>startup.required_skills</code> + <code>startup.nice_to_have_skills</code>.</p>
+  <p><strong>Score:</strong> <code>(matched required / total required) + half-credit for nice-to-haves</code>, capped at 1.0. Required dominates.</p>
+  <div class="example"><strong>Reason emitted:</strong> "Skill overlap: python, fda regulatory" (only emitted when score ≥ 0.5).</div>
+</div>
+
+<div class="card">
+  <h4><span class="pill soft">Dimension</span> Mission match</h4>
+  <p><strong>Inputs:</strong> <code>talent.mission_keywords</code> ∩ <code>startup.mission_keywords</code> (case-insensitive).</p>
+  <p><strong>Score:</strong> Jaccard-ish — overlap size relative to combined set.</p>
+  <div class="example"><strong>Reason emitted:</strong> "Mission alignment: climate, health"</div>
+</div>
+
+<div class="card">
+  <h4><span class="pill soft">Dimension</span> Location match</h4>
+  <p><strong>Inputs:</strong> city, state, remote_ok flags on both sides.</p>
+  <p><strong>Score:</strong> 1.0 same city · 0.7 same state · 0.4 remote-compatible · 0.0 otherwise.</p>
+</div>
+
+<div class="card">
+  <h4><span class="pill soft">Dimension</span> Risk alignment</h4>
+  <p><strong>Inputs:</strong> <code>talent.risk_tolerance</code> (low/medium/high) vs. a stage-derived expected risk:</p>
+  <p class="kv">idea / pre_seed → <strong>high</strong> · seed / series_a → <strong>medium</strong> · growth → <strong>low</strong></p>
+  <p><strong>Score:</strong> 1.0 exact match · 0.5 one bucket off · 0.0 two buckets off.</p>
+  <div class="example"><strong>Why this matters:</strong> a "low risk" CFO who wants stable equity probably shouldn't be matched to an idea-stage napkin sketch.</div>
+</div>
+
+<h3>Per-role weight overrides</h3>
+<p>Some role categories ignore most of the default dimensions:</p>
+
+<table>
+  <thead><tr><th>Role</th><th>Active dimensions (with weights)</th></tr></thead>
+  <tbody>
+    <tr><td><code>mentor</code></td><td><code>sector</code> 0.50 · <code>mission</code> 0.50 — that's it.</td></tr>
+    <tr><td><code>advisor</code></td><td><code>role</code> 0.30 · <code>sector</code> 0.30 · <code>mission</code> 0.20 · <code>stage</code> 0.20</td></tr>
+    <tr><td><code>board_member</code></td><td><code>stage</code> 0.30 · <code>sector</code> 0.30 · <code>role</code> 0.20 · <code>mission</code> 0.20</td></tr>
+    <tr><td><code>student</code> / <code>intern</code></td><td><code>sector</code> 0.30 · <code>skills</code> 0.20 · <code>mission</code> 0.20 · <code>location</code> 0.20 · <code>role</code> 0.10</td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ============================================================ -->
+<section id="enums">
+<h2>All the enums (canonical vocabulary)</h2>
+<p class="lede">Every list of allowed values, what they mean, and where they show up.</p>
+
+<h3>Sector</h3>
+<p>The eight industries Nucleus tracks. Both talents (sectors_of_interest) and startups (primary + secondary sectors) use this list.</p>
+<table>
+  <tbody>
+    <tr><td><code>life_sciences</code></td><td>Biotech, medtech, diagnostics, pharma, digital health.</td></tr>
+    <tr><td><code>ai</code></td><td>ML/AI infrastructure, applied AI, AI-native products.</td></tr>
+    <tr><td><code>defense_aerospace</code></td><td>DoD primes, dual-use, drones, satellites, hypersonics.</td></tr>
+    <tr><td><code>cyber</code></td><td>Security tools, threat intel, identity, infrastructure security.</td></tr>
+    <tr><td><code>energy</code></td><td>Climate tech, grid, batteries, fission/fusion, oil &amp; gas tech.</td></tr>
+    <tr><td><code>advanced_manufacturing</code></td><td>Robotics, additive, semiconductors, factory automation.</td></tr>
+    <tr><td><code>fintech</code></td><td>Payments, banking, lending, crypto, wealth.</td></tr>
+    <tr><td><code>software</code></td><td>Catch-all for B2B/B2C SaaS that isn't sector-specific.</td></tr>
+  </tbody>
+</table>
+
+<h3>Stage</h3>
+<p>How far along the startup is. Talents declare which stages they want to plug into.</p>
+<table>
+  <tbody>
+    <tr><td><code>idea</code></td><td>Napkin sketch. No product, no funding, sometimes no cofounder yet.</td></tr>
+    <tr><td><code>pre_seed</code></td><td>Tiny round (often friends &amp; family, angels). Early prototype.</td></tr>
+    <tr><td><code>seed</code></td><td>First institutional round. Some traction or pilot customers.</td></tr>
+    <tr><td><code>series_a</code></td><td>Product-market fit, scaling team, serious revenue or pipeline.</td></tr>
+    <tr><td><code>growth</code></td><td>Series B+ / late stage. Established business.</td></tr>
+  </tbody>
+</table>
+
+<h3>Availability</h3>
+<p>How much time the talent has, or what kinds of arrangements the startup will accept.</p>
+<table>
+  <tbody>
+    <tr><td><code>full_time</code></td><td>40+ hrs/wk, one company.</td></tr>
+    <tr><td><code>part_time</code></td><td>~20 hrs/wk, often a single ongoing role.</td></tr>
+    <tr><td><code>fractional</code></td><td>5–20 hrs/wk, often split across multiple companies (fractional CFO/CMO).</td></tr>
+    <tr><td><code>advisory</code></td><td>A few hours/month. Usually equity-compensated formal advisor.</td></tr>
+    <tr><td><code>internship</code></td><td>Time-bound (summer, semester) student arrangement.</td></tr>
+  </tbody>
+</table>
+
+<h3>CompType</h3>
+<p>How the talent expects to be paid (and how the startup pays).</p>
+<table>
+  <tbody>
+    <tr><td><code>salary</code></td><td>Cash only.</td></tr>
+    <tr><td><code>equity</code></td><td>Stock/options only — common for advisors.</td></tr>
+    <tr><td><code>salary_plus_equity</code></td><td>Both — the standard startup employee package.</td></tr>
+    <tr><td><code>free</code></td><td>Mentor giving time. No comp expected.</td></tr>
+  </tbody>
+</table>
+
+<h3>RiskTolerance</h3>
+<p>Talent's appetite for early-stage chaos. Used in the <code>risk</code> scoring dimension.</p>
+<table>
+  <tbody>
+    <tr><td><code>high</code></td><td>"Idea-stage is fine, I'll take payment in lottery tickets."</td></tr>
+    <tr><td><code>medium</code></td><td>Wants to see traction or funding before committing.</td></tr>
+    <tr><td><code>low</code></td><td>Established companies only. Predictable salary expected.</td></tr>
+  </tbody>
+</table>
+
+<h3>RoleTitle</h3>
+<p>Job titles. Talents list titles they're seeking; startups list titles they're hiring.</p>
+<table>
+  <tbody>
+    <tr><td><code>cofounder</code></td><td>Joining at the founder level.</td></tr>
+    <tr><td><code>ceo</code> / <code>coo</code> / <code>cto</code> / <code>cfo</code></td><td>C-suite roles.</td></tr>
+    <tr><td><code>fractional_exec</code></td><td>Part-time C-suite (fractional CFO is the canonical example).</td></tr>
+    <tr><td><code>engineer</code> · <code>sales</code> · <code>marketing</code> · <code>biz_dev</code></td><td>Individual contributor / functional roles.</td></tr>
+    <tr><td><code>regulatory</code></td><td>FDA / FAA / DoD compliance specialist.</td></tr>
+    <tr><td><code>product</code> · <code>design</code></td><td>Product / UX roles.</td></tr>
+    <tr><td><code>other</code></td><td>Catch-all.</td></tr>
+  </tbody>
+</table>
+
+<h3>Origin</h3>
+<p>Where the startup came from. Useful for Utah-ecosystem matching.</p>
+<table>
+  <tbody>
+    <tr><td><code>university_lab_uofu</code></td><td>Spun out of University of Utah research.</td></tr>
+    <tr><td><code>university_lab_byu</code></td><td>BYU spinout.</td></tr>
+    <tr><td><code>university_lab_usu</code></td><td>Utah State spinout.</td></tr>
+    <tr><td><code>bootstrapped</code></td><td>Self-funded, no institutional capital yet.</td></tr>
+    <tr><td><code>vc_backed</code></td><td>Took institutional venture money.</td></tr>
+    <tr><td><code>grant_funded</code></td><td>Lives on SBIR / NSF / DOE / DARPA grants.</td></tr>
+  </tbody>
+</table>
+
+<h3>FundingStatus</h3>
+<p>Last round closed (or current state if pre-funding). Slightly different from <code>Stage</code> — funding status is about <em>capital raised</em>, stage is about <em>company maturity</em>.</p>
+<table>
+  <tbody>
+    <tr><td><code>bootstrapped</code></td><td>No outside money.</td></tr>
+    <tr><td><code>grants</code></td><td>Living on non-dilutive funding.</td></tr>
+    <tr><td><code>pre_seed</code></td><td>Closed a pre-seed round.</td></tr>
+    <tr><td><code>seed</code></td><td>Closed a seed round.</td></tr>
+    <tr><td><code>series_a</code></td><td>Closed an A.</td></tr>
+    <tr><td><code>series_b_plus</code></td><td>B or later.</td></tr>
+  </tbody>
+</table>
+
+<h3>Urgency</h3>
+<p>How fast the startup needs to fill its open roles. Currently stored but not yet used by the matcher — future feature for re-ranking.</p>
+<table>
+  <tbody>
+    <tr><td><code>immediate</code></td><td>"We need this person yesterday."</td></tr>
+    <tr><td><code>next_quarter</code></td><td>Hiring planned but not desperate.</td></tr>
+    <tr><td><code>exploring</code></td><td>Open to conversations, no fixed timeline.</td></tr>
+  </tbody>
+</table>
+
+<h3>ServiceType <span class="kv">(for service providers)</span></h3>
+<table>
+  <tbody>
+    <tr><td><code>legal</code></td><td>Law firms — incorporation, IP, contracts.</td></tr>
+    <tr><td><code>creative</code></td><td>Branding, design, content.</td></tr>
+    <tr><td><code>operational</code></td><td>HR, ops consulting, fractional COO firms.</td></tr>
+    <tr><td><code>technical</code></td><td>Dev shops, contract engineering.</td></tr>
+    <tr><td><code>financial</code></td><td>Bookkeeping, fractional CFO firms, tax.</td></tr>
+    <tr><td><code>marketing</code></td><td>Growth, paid acquisition, PR.</td></tr>
+    <tr><td><code>recruiting</code></td><td>Headhunters, staffing.</td></tr>
+  </tbody>
+</table>
+
+<h3>CheckSize <span class="kv">(for investors)</span></h3>
+<table>
+  <tbody>
+    <tr><td><code>under_25k</code></td><td>Small angel checks.</td></tr>
+    <tr><td><code>25k_100k</code></td><td>Standard angel range.</td></tr>
+    <tr><td><code>100k_500k</code></td><td>Large angels, micro-VCs, pre-seed funds.</td></tr>
+    <tr><td><code>500k_2m</code></td><td>Seed funds.</td></tr>
+    <tr><td><code>2m_plus</code></td><td>Series A leads, growth funds.</td></tr>
+  </tbody>
+</table>
+
+<h3>InvestorType <span class="kv">(for investors)</span></h3>
+<table>
+  <tbody>
+    <tr><td><code>angel</code></td><td>Individual investor writing personal checks.</td></tr>
+    <tr><td><code>vc</code></td><td>Traditional venture fund.</td></tr>
+    <tr><td><code>family_office</code></td><td>Investing on behalf of a wealthy family.</td></tr>
+    <tr><td><code>syndicate</code></td><td>Pools angel money behind a lead investor.</td></tr>
+    <tr><td><code>corporate_vc</code></td><td>Strategic investment arm of a large company.</td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ============================================================ -->
+<section id="match-card">
+<h2>Anatomy of a match result</h2>
+<p class="lede">Every matcher (rule, embedding, agentic) returns the same <code>MatchResult</code> shape so the frontend match card renders identically.</p>
+
+<div class="formula">{
+  "startup_id": "...",        // or talent_id, depending on direction
+  "score": 0.78,              // final 0.0 - 1.0 weighted sum
+  "passed_hard_filters": true,
+  "dimension_scores": {
+    "role":     1.00,         // talent wanted CTO, startup needs CTO
+    "sector":   1.00,         // both life_sciences
+    "stage":    1.00,         // talent wanted seed, startup is seed
+    "skills":   0.66,         // 2 of 3 required skills
+    "mission":  0.50,         // some keyword overlap
+    "location": 0.70,         // same state, different city
+    "risk":     1.00          // medium risk vs. seed stage = match
+  },
+  "reasons": [                // dimensions that scored ≥ 0.5
+    "Role overlap: cto",
+    "Sector overlap: life_sciences",
+    "Stage match: seed",
+    "Skill overlap: python, fda_regulatory"
+  ],
+  "blockers": []              // would contain hard-filter failures
+}</div>
+
+<div class="card">
+  <h4>Score</h4>
+  <p>Final 0.0–1.0 number. Weighted sum of <code>dimension_scores</code> using the role-category weights. Same scale across all matchers.</p>
+</div>
+
+<div class="card">
+  <h4>passed_hard_filters</h4>
+  <p>Boolean. If false, the match is shown to the user as "blocked" with a list of <code>blockers</code>. We still compute and return dimension scores even on blocked matches — the frontend uses them to power a future "you're 80% fit, here's what's missing" gap-analyzer.</p>
+</div>
+
+<div class="card">
+  <h4>dimension_scores</h4>
+  <p>Per-dimension breakdown. Powers the explainable match card UI — each dimension can be a little bar chart.</p>
+</div>
+
+<div class="card">
+  <h4>reasons</h4>
+  <p>Human-readable bullet points. Generated by each dimension that scores ≥ 0.5. These are the "Why matched" lines the user reads.</p>
+</div>
+
+<div class="card">
+  <h4>blockers</h4>
+  <p>Human-readable bullet points generated by hard-filter failures. Things like "Salary gap: $150,000 &gt; $140,000" or "Availability mismatch".</p>
+</div>
+</section>
+
+<footer>
+  Generated from <a href="PLAN.md">PLAN.md</a>, <a href="backend/app/model/schema/enums.py">enums.py</a>, and <a href="backend/app/provider/matching/rule_filter.py">rule_filter.py</a>.
+</footer>
+
+</div>
+</body>
+</html>
