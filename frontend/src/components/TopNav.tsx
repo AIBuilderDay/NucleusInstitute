@@ -6,7 +6,7 @@ interface TopNavProps {
 }
 
 const TABS: ReadonlyArray<{ id: Route; label: string }> = [
-  { id: "browse", label: "Browse" },
+  { id: "explore", label: "Explore" },
   { id: "match", label: "Match" },
   { id: "profile", label: "My Profile" },
   { id: "onboard", label: "Join" },
@@ -15,40 +15,20 @@ const TABS: ReadonlyArray<{ id: Route; label: string }> = [
 export function TopNav({ route, setRoute }: TopNavProps) {
   return (
     <header
-      style={{
-        position: "sticky",
-        top: 0,
-        zIndex: 50,
-        background: "var(--sand-50)",
-        borderBottom: "1px solid var(--sand-300)",
-      }}
+      className="sticky top-0 z-50 bg-pearl border-b border-pearl-300"
     >
       <nav
-        style={{
-          maxWidth: 1440,
-          margin: "0 auto",
-          padding: "6px 28px 0",
-          display: "flex",
-          gap: 4,
-          alignItems: "flex-end",
-        }}
+        className="max-w-[1440px] mx-auto pt-6 px-28 pb-0 flex gap-4 items-end"
       >
         <button
-          onClick={() => setRoute("browse")}
+          onClick={() => setRoute("explore")}
           aria-label="Innovate Utah — home"
-          style={{
-            padding: "6px 16px 6px 0",
-            display: "flex",
-            alignItems: "center",
-            background: "transparent",
-            border: 0,
-            cursor: "pointer",
-          }}
+          className="pt-6 pr-16 pb-6 pl-0 flex items-center bg-transparent border-0 cursor-pointer"
         >
           <img
             src="/InnovateUtah.png"
             alt="Innovate Utah"
-            style={{ height: 38, width: "auto", display: "block" }}
+            className="h-38 w-auto block"
           />
         </button>
         {TABS.map((t) => {
@@ -57,36 +37,22 @@ export function TopNav({ route, setRoute }: TopNavProps) {
             <button
               key={t.id}
               onClick={() => setRoute(t.id)}
-              style={{
-                padding: "10px 18px 11px",
-                position: "relative",
-                borderRadius: 0,
-                color: on ? "var(--nucleus-blue)" : "var(--ink-muted)",
-                fontFamily: "var(--font-display)",
-                fontSize: on ? 22 : 21,
-                fontWeight: 400,
-                fontStyle: on ? "italic" : "normal",
-                letterSpacing: "-0.005em",
-                lineHeight: 1,
-                transition: "color 0.12s",
-              }}
+              className={`pt-10 px-18 pb-11 relative rounded-none font-display font-normal tracking-[-0.005em] leading-none transition-colors duration-[120ms] ${
+                on
+                  ? "text-nucleus-blue text-[22px] italic"
+                  : "text-graphite-muted text-[21px] not-italic"
+              }`}
             >
               {t.label}
               <span
-                style={{
-                  position: "absolute",
-                  left: 18,
-                  right: 18,
-                  bottom: -1,
-                  height: 2,
-                  background: on ? "var(--nucleus-blue)" : "transparent",
-                  transition: "background 0.15s",
-                }}
+                className={`absolute left-18 right-18 -bottom-1 h-2 transition-[background] duration-[150ms] ${
+                  on ? "bg-nucleus-blue" : "bg-transparent"
+                }`}
               />
             </button>
           );
         })}
-        <div style={{ flex: 1 }} />
+        <div className="flex-1" />
       </nav>
     </header>
   );

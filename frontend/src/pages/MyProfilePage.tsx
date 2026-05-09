@@ -7,7 +7,7 @@ import {
   SECTOR_LABEL,
   STAGE_LABEL,
 } from "../labels";
-import { Avatar, Pill, ScoreArc, Sidesheet, selectStyle } from "../components/ui";
+import { Avatar, Pill, ScoreArc, Sidesheet, selectClass } from "../components/ui";
 import { ConnectionWeb } from "../components/ConnectionWeb";
 import { PersonDetailBody } from "./shared";
 
@@ -53,36 +53,17 @@ export function MyProfilePage({
 
   return (
     <div>
-      <div
-        style={{
-          maxWidth: 1440,
-          margin: "0 auto",
-          padding: "32px 32px 24px",
-          display: "grid",
-          gridTemplateColumns: "auto 1fr auto",
-          gap: 28,
-          alignItems: "center",
-        }}
-      >
+      <div className="max-w-[1440px] mx-auto pt-32 px-32 pb-24 grid grid-cols-[auto_1fr_auto] gap-28 items-center">
         <Avatar name={me.name} size={84} tone="blue" />
         <div>
           <div className="tiny-caps">
             {ROLE_CATEGORY_LABEL[me.role_category]} · {NETWORK_LABEL[me.primary_network]}
           </div>
-          <h1
-            className="display"
-            style={{
-              fontSize: 36,
-              fontWeight: 400,
-              margin: "4px 0 6px",
-              color: "var(--nucleus-blue)",
-              letterSpacing: "-0.01em",
-            }}
-          >
+          <h1 className="font-display text-[36px] font-normal mt-4 mb-6 text-nucleus-blue tracking-[-0.01em]">
             {me.name}
           </h1>
-          <div style={{ fontSize: 14, color: "var(--charcoal)" }}>{me.headline}</div>
-          <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+          <div className="text-[14px] text-graphite">{me.headline}</div>
+          <div className="flex gap-6 mt-10 flex-wrap">
             {(me.trust_badges ?? []).map((b) => (
               <Pill key={b} tone="copper">
                 ◆ {b}
@@ -95,14 +76,14 @@ export function MyProfilePage({
             ))}
           </div>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div className="flex flex-col gap-8">
           <button className="btn btn-primary" onClick={() => onMatchPerson(me)}>
             Run my match →
           </button>
           <select
             onChange={(e) => onSwitchUser(e.target.value)}
             value={me.id}
-            style={{ ...selectStyle, fontSize: 12 }}
+            className={`${selectClass} text-[12px]`}
           >
             {people.map((p) => (
               <option key={p.id} value={p.id}>
@@ -113,35 +94,16 @@ export function MyProfilePage({
         </div>
       </div>
 
-      <div
-        style={{
-          maxWidth: 1440,
-          margin: "0 auto",
-          padding: "8px 32px 64px",
-          display: "grid",
-          gridTemplateColumns: "1fr 380px",
-          gap: 28,
-        }}
-      >
-        <section className="card" style={{ padding: 24 }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "baseline",
-              justifyContent: "space-between",
-              marginBottom: 8,
-            }}
-          >
+      <div className="max-w-[1440px] mx-auto pt-8 px-32 pb-64 grid grid-cols-[1fr_380px] gap-28">
+        <section className="card p-24">
+          <div className="flex items-baseline justify-between mb-8">
             <div>
               <div className="tiny-caps">Network — Connection web</div>
-              <h2
-                className="display"
-                style={{ fontSize: 26, color: "var(--nucleus-blue)", margin: "4px 0 0" }}
-              >
+              <h2 className="font-display text-[26px] text-nucleus-blue mt-4">
                 Your Wasatch graph
               </h2>
             </div>
-            <div style={{ display: "flex", gap: 18 }}>
+            <div className="flex gap-18">
               <Metric n={warm} l="Warm" sub="≥ 0.6" />
               <Metric n={direct} l="Direct" sub="≥ 0.35" />
               <Metric n={total} l="Reachable" sub="all" />
@@ -150,27 +112,16 @@ export function MyProfilePage({
 
           <ConnectionWeb connections={conns} currentUser={me} onPick={setPickedConn} />
 
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              marginTop: 6,
-              fontSize: 11,
-              color: "var(--slate)",
-            }}
-          >
+          <div className="flex justify-between mt-6 text-[11px] text-graphite-muted">
             <span>Inner ring = warmer (shared sector + university + city + mission)</span>
             <span>· Click a node to inspect</span>
           </div>
         </section>
 
-        <aside style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-          <div className="card" style={{ padding: 18 }}>
+        <aside className="flex flex-col gap-18">
+          <div className="card p-18">
             <div className="tiny-caps">Top startup matches for you</div>
-            <h3
-              className="display"
-              style={{ fontSize: 20, color: "var(--nucleus-blue)", margin: "6px 0 12px" }}
-            >
+            <h3 className="font-display text-[20px] text-nucleus-blue mt-6 mb-12">
               Today's fits
             </h3>
             {recent.slice(0, 5).map((m, i) => {
@@ -179,47 +130,29 @@ export function MyProfilePage({
               return (
                 <div
                   key={`${m.startup_id}-${i}`}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "36px 1fr auto",
-                    gap: 10,
-                    alignItems: "center",
-                    padding: "10px 0",
-                    borderTop: i ? "1px solid var(--color-border-soft)" : "none",
-                  }}
+                  className={`grid grid-cols-[36px_1fr_auto] gap-10 items-center py-10 ${i ? "border-t border-pearl-200" : ""}`}
                 >
                   <ScoreArc score={m.score} size={36} label={false} />
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500, color: "var(--charcoal)" }}>
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-medium text-graphite">
                       {t.name}
                     </div>
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: "var(--slate)",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                    >
+                    <div className="text-[11px] text-graphite-muted whitespace-nowrap overflow-hidden text-ellipsis">
                       {SECTOR_LABEL[t.sector]} · {STAGE_LABEL[t.stage]}
                     </div>
                   </div>
                   <span
-                    style={{
-                      fontSize: 11,
-                      color: m.passed_hard_filters ? "var(--copper)" : "var(--slate-light)",
-                    }}
+                    className={`text-[11px] ${m.passed_hard_filters ? "text-gold" : "text-graphite-light"}`}
                   >
                     {m.passed_hard_filters ? "open" : "blocked"}
                   </span>
                 </div>
               );
             })}
-            {!recent.length && <div className="shimmer" style={{ height: 64, marginTop: 8 }} />}
+            {!recent.length && <div className="shimmer h-64 mt-8" />}
           </div>
 
-          <div className="card" style={{ padding: 18 }}>
+          <div className="card p-18">
             <div className="tiny-caps">Profile completeness</div>
             <ProfileMeter person={me} />
           </div>
@@ -248,19 +181,12 @@ export function MyProfilePage({
 
 function Metric({ n, l, sub }: { n: number; l: string; sub: string }) {
   return (
-    <div style={{ textAlign: "right" }}>
-      <div className="display" style={{ fontSize: 30, color: "var(--nucleus-blue)", lineHeight: 1 }}>
+    <div className="text-right">
+      <div className="font-display text-[30px] text-nucleus-blue leading-none">
         {n}
       </div>
-      <div
-        style={{
-          fontSize: 11,
-          color: "var(--slate)",
-          letterSpacing: "0.06em",
-          textTransform: "uppercase",
-        }}
-      >
-        {l} <span style={{ color: "var(--slate-light)" }}>{sub}</span>
+      <div className="text-[11px] text-graphite-muted tracking-[0.06em] uppercase">
+        {l} <span className="text-graphite-light">{sub}</span>
       </div>
     </div>
   );
@@ -279,46 +205,25 @@ function ProfileMeter({ person }: { person: Person }) {
   const done = checks.filter((c) => c.v).length;
   const pct = Math.round((done / checks.length) * 100);
   return (
-    <div style={{ marginTop: 8 }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "baseline",
-          marginBottom: 8,
-        }}
-      >
-        <span className="display" style={{ fontSize: 30, color: "var(--copper)" }}>
+    <div className="mt-8">
+      <div className="flex justify-between items-baseline mb-8">
+        <span className="font-display text-[30px] text-gold">
           {pct}%
         </span>
-        <span style={{ fontSize: 11, color: "var(--slate)" }}>
+        <span className="text-[11px] text-graphite-muted">
           {done} / {checks.length} fields
         </span>
       </div>
-      <div
-        style={{
-          height: 6,
-          background: "var(--whisper-200)",
-          borderRadius: 3,
-          overflow: "hidden",
-          marginBottom: 14,
-        }}
-      >
-        <div style={{ width: `${pct}%`, height: "100%", background: "var(--copper)" }} />
+      <div className="h-6 bg-pearl-200 rounded-[3px] overflow-hidden mb-14">
+        <div className="h-full bg-gold" style={{ width: `${pct}%` }} />
       </div>
       {checks.map((c) => (
         <div
           key={c.k}
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            fontSize: 12.5,
-            padding: "5px 0",
-            borderTop: "1px solid var(--color-border-soft)",
-          }}
+          className="flex justify-between text-[12.5px] py-5 border-t border-pearl-200"
         >
-          <span style={{ color: "var(--charcoal)" }}>{c.k}</span>
-          <span style={{ color: c.v ? "var(--copper)" : "var(--slate-light)" }}>
+          <span className="text-graphite">{c.k}</span>
+          <span className={c.v ? "text-gold" : "text-graphite-light"}>
             {c.v ? "✓" : "—"}
           </span>
         </div>

@@ -11,50 +11,27 @@ interface HeroStripProps {
 export function HeroStrip({ eyebrow, title, lede, side = null, dense = false }: HeroStripProps) {
   return (
     <section
-      style={{
-        background: "var(--nucleus-blue)",
-        color: "var(--wasatch-whisper)",
-        borderBottom: "1px solid var(--nucleus-blue-600)",
-      }}
+      className="bg-nucleus-blue text-blue-50 border-b border-blue-700"
     >
       <div
-        style={{
-          maxWidth: 1440,
-          margin: "0 auto",
-          padding: dense ? "36px 32px 36px" : "56px 32px 56px",
-          minHeight: dense ? 196 : 280,
-          display: "grid",
-          gridTemplateColumns: side ? "1fr 380px" : "1fr",
-          gap: 48,
-          alignItems: "center",
-        }}
+        className={`max-w-[1440px] mx-auto px-32 grid gap-48 items-center ${
+          dense ? "py-36 min-h-[196px]" : "py-56 min-h-[280px]"
+        } ${side ? "grid-cols-[1fr_380px]" : "grid-cols-1"}`}
       >
         <div>
-          <div className="tiny-caps" style={{ color: "var(--copper-soft)" }}>
+          <div className="tiny-caps text-gold-faint">
             {eyebrow}
           </div>
           <h1
-            className="display"
-            style={{
-              fontSize: dense ? 38 : 56,
-              fontWeight: 400,
-              margin: "10px 0 14px",
-              maxWidth: 760,
-              color: "var(--wasatch-whisper)",
-              lineHeight: 1.12,
-            }}
+            className={`font-display font-normal my-0 mt-10 mb-14 max-w-[760px] text-blue-50 leading-[1.12] ${
+              dense ? "text-[38px]" : "text-[56px]"
+            }`}
           >
             {title}
           </h1>
           {lede && (
             <p
-              style={{
-                margin: 0,
-                fontSize: 16,
-                lineHeight: 1.55,
-                color: "rgba(240,232,214,0.78)",
-                maxWidth: 620,
-              }}
+              className="m-0 text-[16px] leading-[1.55] text-[rgba(240,232,214,0.78)] max-w-[620px]"
             >
               {lede}
             </p>

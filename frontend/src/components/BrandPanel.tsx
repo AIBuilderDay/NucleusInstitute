@@ -39,99 +39,56 @@ export function BrandPanel({ open, onClose }: BrandPanelProps) {
   return (
     <div
       onClick={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(15,44,79,0.35)",
-        zIndex: 80,
-        display: "flex",
-        justifyContent: "flex-end",
-      }}
+      className="fixed inset-0 bg-[rgba(15,44,79,0.35)] z-80 flex justify-end"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="fade-in"
-        style={{
-          width: 480,
-          maxWidth: "90vw",
-          background: "var(--whisper-50)",
-          height: "100%",
-          overflowY: "auto",
-          borderLeft: "1px solid var(--color-border)",
-        }}
+        className="fade-in w-[480px] max-w-[90vw] bg-blue-50 h-full overflow-y-auto border-l border-pearl-300"
       >
-        <div style={{ padding: "24px 28px", borderBottom: "1px solid var(--color-border)" }}>
+        <div className="px-28 pt-24 pb-24 border-b border-pearl-300">
           <div className="tiny-caps">Brand System</div>
           <h2
-            className="display"
-            style={{ fontSize: 30, margin: "6px 0 4px", color: "var(--nucleus-blue)" }}
+            className="font-display text-[30px] mt-6 mb-4 text-nucleus-blue"
           >
             Color tokens
           </h2>
-          <p style={{ margin: 0, color: "var(--slate)", fontSize: 13 }}>
+          <p className="m-0 text-graphite-muted text-[13px]">
             <strong>Innovate Utah</strong> palette — cobalt anchor (#0848B8) on pearl
             surfaces, graphite type, and one warm{" "}
-            <strong style={{ color: "var(--gold-deep)" }}>Wasatch gold</strong> accent for
+            <strong className="text-gold-deep">Wasatch gold</strong> accent for
             energy. Built for a Utah innovation network.
           </p>
         </div>
-        <div style={{ padding: "20px 28px", display: "grid", gap: 8 }}>
+        <div className="px-28 py-20 grid gap-8">
           {CELLS.map((c) => (
             <div
               key={c.token}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "56px 1fr auto",
-                gap: 14,
-                alignItems: "center",
-                padding: "10px 12px",
-                background: "white",
-                border: "1px solid var(--color-border-soft)",
-                borderRadius: 8,
-              }}
+              className="grid grid-cols-[56px_1fr_auto] gap-14 items-center px-12 py-10 bg-white border border-pearl-200 rounded-[8px]"
             >
               <div
-                style={{
-                  height: 44,
-                  background: c.v,
-                  borderRadius: 6,
-                  border: "1px solid rgba(0,0,0,0.06)",
-                }}
+                className="h-44 rounded-[6px] border border-[rgba(0,0,0,0.06)]"
+                style={{ background: c.v }}
               />
-              <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
-                <span style={{ fontWeight: 500, color: "var(--charcoal)", fontSize: 13.5 }}>
+              <div className="flex flex-col leading-[1.2]">
+                <span className="font-medium text-graphite text-[13.5px]">
                   {c.name}
                 </span>
-                <span className="mono" style={{ fontSize: 11, color: "var(--slate)" }}>
+                <span className="font-mono text-[11px] text-graphite-muted">
                   {c.token}
                 </span>
               </div>
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "flex-end",
-                  gap: 2,
-                }}
-              >
-                <span className="mono" style={{ fontSize: 11.5, color: "var(--charcoal)" }}>
+              <div className="flex flex-col items-end gap-2">
+                <span className="font-mono text-[11.5px] text-graphite">
                   {c.v}
                 </span>
-                <span
-                  style={{
-                    fontSize: 10,
-                    letterSpacing: "0.12em",
-                    textTransform: "uppercase",
-                    color: "var(--slate-light)",
-                  }}
-                >
+                <span className="text-[10px] tracking-[0.12em] uppercase text-graphite-light">
                   {c.role}
                 </span>
               </div>
             </div>
           ))}
         </div>
-        <div style={{ padding: "8px 28px 32px", color: "var(--slate)", fontSize: 12, lineHeight: 1.55 }}>
+        <div className="px-28 pt-8 pb-32 text-graphite-muted text-[12px] leading-[1.55]">
           <p>
             <strong>Usage rules:</strong> Sub-brand lockups are always Blue-on-Whisper or
             White-on-Blue — no other tints. Headings: Newsreader serif in Nucleus Blue. Body:

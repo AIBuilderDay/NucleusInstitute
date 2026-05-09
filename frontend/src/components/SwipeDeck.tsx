@@ -44,22 +44,14 @@ function CardHero({ name, sectorLabel, isStartup = false }: CardHeroProps) {
 
   return (
     <div
-      style={{
-        position: "relative",
-        height: "58%",
-        width: "100%",
-        background: `linear-gradient(155deg, ${a} 0%, ${b} 80%)`,
-        overflow: "hidden",
-        display: "flex",
-        alignItems: "flex-end",
-        justifyContent: "flex-start",
-      }}
+      className="relative h-[58%] w-full overflow-hidden flex items-end justify-start"
+      style={{ background: `linear-gradient(155deg, ${a} 0%, ${b} 80%)` }}
     >
       <svg
         viewBox="0 0 400 240"
         preserveAspectRatio="xMidYMid slice"
         aria-hidden
-        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.18 }}
+        className="absolute inset-0 w-full h-full opacity-[0.18]"
       >
         <path
           d="M 0 200 L 60 130 L 110 165 L 175 95 L 230 145 L 295 70 L 360 140 L 400 110 L 400 240 L 0 240 Z"
@@ -73,19 +65,7 @@ function CardHero({ name, sectorLabel, isStartup = false }: CardHeroProps) {
       </svg>
 
       <span
-        style={{
-          position: "absolute",
-          right: -12,
-          top: -30,
-          fontSize: 280,
-          fontFamily: "var(--font-display)",
-          fontWeight: 300,
-          color: "rgba(240,232,214,0.10)",
-          letterSpacing: "-0.04em",
-          lineHeight: 1,
-          userSelect: "none",
-          pointerEvents: "none",
-        }}
+        className="absolute right-[-12px] top-[-30px] text-[280px] font-display font-light tracking-[-0.04em] leading-[1] select-none pointer-events-none text-[rgba(240,232,214,0.10)]"
       >
         {initials}
       </span>
@@ -93,12 +73,7 @@ function CardHero({ name, sectorLabel, isStartup = false }: CardHeroProps) {
       <svg
         width="100%"
         height="100%"
-        style={{
-          position: "absolute",
-          inset: 0,
-          opacity: 0.18,
-          mixBlendMode: "overlay",
-        }}
+        className="absolute inset-0 opacity-[0.18] mix-blend-overlay"
         aria-hidden
       >
         <defs>
@@ -114,58 +89,22 @@ function CardHero({ name, sectorLabel, isStartup = false }: CardHeroProps) {
         <rect width="100%" height="100%" fill={`url(#grain-${initials})`} />
       </svg>
 
-      <div
-        style={{
-          position: "relative",
-          margin: "0 0 24px 28px",
-          display: "flex",
-          alignItems: "center",
-          gap: 14,
-        }}
-      >
+      <div className="relative mb-24 ml-28 flex items-center gap-14">
         <div
-          style={{
-            width: 64,
-            height: 64,
-            borderRadius: isStartup ? 14 : "50%",
-            background: "rgba(240,232,214,0.95)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontFamily: "var(--font-display)",
-            fontSize: isStartup ? 30 : 28,
-            fontWeight: 500,
-            color: a,
-            letterSpacing: "-0.02em",
-          }}
+          className={`w-64 h-64 ${isStartup ? "rounded-[14px]" : "rounded-full"} flex items-center justify-center font-display ${isStartup ? "text-[30px]" : "text-[28px]"} font-medium tracking-[-0.02em] bg-[rgba(240,232,214,0.95)]`}
+          style={{ color: a }}
         >
           {initials}
         </div>
         <div
-          style={{
-            padding: "5px 11px",
-            borderRadius: 999,
-            background: "rgba(240,232,214,0.16)",
-            border: "1px solid rgba(240,232,214,0.28)",
-            fontSize: 11,
-            color: "#F0E8D6",
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-          }}
+          className="py-5 px-11 rounded-full text-[11px] tracking-[0.06em] uppercase bg-[rgba(240,232,214,0.16)] border border-[rgba(240,232,214,0.28)] text-[#F0E8D6]"
         >
           {sectorLabel}
         </div>
       </div>
 
       <div
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          bottom: 0,
-          height: 90,
-          background: "linear-gradient(to top, rgba(15,44,79,0.4), transparent)",
-        }}
+        className="absolute left-0 right-0 bottom-0 h-90 bg-[linear-gradient(to_top,rgba(15,44,79,0.4),transparent)]"
       />
     </div>
   );
@@ -179,52 +118,19 @@ interface PromptChipProps {
 }
 
 function PromptChip({ label, value, tone = "blue", wide = false }: PromptChipProps) {
-  const bgMap: Record<string, string> = {
-    blue: "#EAF1F8",
-    copper: "#FBEFE8",
-    sand: "#F5EEDE",
-  };
-  const fgMap: Record<string, string> = {
-    blue: "var(--nucleus-blue)",
-    copper: "var(--copper)",
-    sand: "var(--graphite)",
-  };
-  const bg = bgMap[tone] ?? "#EAF1F8";
-  const fg = fgMap[tone] ?? "var(--ink)";
+  const bgClass = tone === "copper" ? "bg-[#FBEFE8]" : tone === "sand" ? "bg-[#F5EEDE]" : "bg-[#EAF1F8]";
+  const fgClass = tone === "copper" ? "text-gold" : tone === "sand" ? "text-graphite" : "text-nucleus-blue";
   return (
     <div
-      style={{
-        gridColumn: wide ? "1 / -1" : "auto",
-        background: bg,
-        padding: "8px 12px",
-        borderRadius: 10,
-        display: "flex",
-        flexDirection: "column",
-        gap: 2,
-        minWidth: 0,
-      }}
+      className={`${wide ? "col-span-full" : ""} py-8 px-12 rounded-[10px] flex flex-col gap-2 min-w-0 ${bgClass}`}
     >
       <span
-        style={{
-          fontSize: 9.5,
-          letterSpacing: "0.10em",
-          textTransform: "uppercase",
-          color: fg,
-          opacity: 0.7,
-          fontWeight: 600,
-        }}
+        className={`text-[9.5px] tracking-[0.10em] uppercase font-semibold opacity-70 ${fgClass}`}
       >
         {label}
       </span>
       <span
-        style={{
-          fontSize: 13,
-          color: "var(--ink)",
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          textTransform: wide ? "none" : "capitalize",
-        }}
+        className={`text-[13px] text-graphite whitespace-nowrap overflow-hidden text-ellipsis ${wide ? "" : "capitalize"}`}
       >
         {value}
       </span>
@@ -244,58 +150,26 @@ function PersonSwipeCard({ p, onTap }: { p: Person; onTap: () => void }) {
   return (
     <div
       onClick={onTap}
-      style={{
-        width: "100%",
-        height: "100%",
-        borderRadius: 24,
-        overflow: "hidden",
-        background: "var(--white)",
-        boxShadow:
-          "0 24px 60px rgba(15,44,79,0.20), 0 4px 12px rgba(15,44,79,0.10)",
-        display: "flex",
-        flexDirection: "column",
-        cursor: "pointer",
-        userSelect: "none",
-      }}
+      className="w-full h-full rounded-[24px] overflow-hidden bg-white flex flex-col cursor-pointer select-none shadow-[0_24px_60px_rgba(15,44,79,0.20),0_4px_12px_rgba(15,44,79,0.10)]"
     >
       <CardHero name={p.name} sectorLabel={sector} />
 
-      <div
-        style={{
-          padding: "18px 22px 16px",
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          gap: 10,
-        }}
-      >
+      <div className="pt-18 px-22 pb-16 flex-1 flex flex-col gap-10">
         <div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-            <h2
-              className="display"
-              style={{
-                margin: 0,
-                fontSize: 28,
-                fontWeight: 500,
-                letterSpacing: "-0.012em",
-                color: "var(--ink)",
-                lineHeight: 1.05,
-              }}
-            >
+          <div className="flex items-baseline gap-10 flex-wrap">
+            <h2 className="font-display m-0 text-[28px] font-medium tracking-[-0.012em] text-graphite leading-[1.05]">
               {p.name}
             </h2>
-            <span style={{ fontSize: 13, color: "var(--ink-muted)" }}>
+            <span className="text-[13px] text-graphite-muted">
               {p.years_experience}y · {p.location_city}
             </span>
           </div>
-          <div
-            style={{ fontSize: 13.5, color: "var(--ink-muted)", marginTop: 4, lineHeight: 1.4 }}
-          >
+          <div className="text-[13.5px] text-graphite-muted mt-4 leading-[1.4]">
             {p.headline}
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 2 }}>
+        <div className="grid grid-cols-2 gap-8 mt-2">
           <PromptChip label="Looking for" value={looking || "—"} tone="blue" />
           <PromptChip
             label="Network"
@@ -305,25 +179,17 @@ function PersonSwipeCard({ p, onTap }: { p: Person; onTap: () => void }) {
         </div>
         {mission && <PromptChip label="Mission" value={mission} tone="sand" wide />}
 
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: "auto" }}>
+        <div className="flex flex-wrap gap-5 mt-auto">
           {(p.trust_badges ?? []).slice(0, 3).map((b) => (
             <span
               key={b}
-              style={{
-                fontSize: 10.5,
-                padding: "3px 9px",
-                borderRadius: 999,
-                background: "var(--whisper-200)",
-                color: "var(--ink)",
-                border: "1px solid var(--sand-300)",
-                letterSpacing: "0.02em",
-              }}
+              className="text-[10.5px] py-3 px-9 rounded-full bg-pearl-200 text-graphite border border-pearl-300 tracking-[0.02em]"
             >
               {b}
             </span>
           ))}
-          <span style={{ flex: 1 }} />
-          <span style={{ fontSize: 11, color: "var(--ink-light)", alignSelf: "center" }}>
+          <span className="flex-1" />
+          <span className="text-[11px] text-graphite-light self-center">
             Tap to read more →
           </span>
         </div>
@@ -343,58 +209,26 @@ function StartupSwipeCard({ s, onTap }: { s: Startup; onTap: () => void }) {
   return (
     <div
       onClick={onTap}
-      style={{
-        width: "100%",
-        height: "100%",
-        borderRadius: 24,
-        overflow: "hidden",
-        background: "var(--white)",
-        boxShadow:
-          "0 24px 60px rgba(15,44,79,0.20), 0 4px 12px rgba(15,44,79,0.10)",
-        display: "flex",
-        flexDirection: "column",
-        cursor: "pointer",
-        userSelect: "none",
-      }}
+      className="w-full h-full rounded-[24px] overflow-hidden bg-white flex flex-col cursor-pointer select-none shadow-[0_24px_60px_rgba(15,44,79,0.20),0_4px_12px_rgba(15,44,79,0.10)]"
     >
       <CardHero name={s.name} sectorLabel={sector} isStartup />
 
-      <div
-        style={{
-          padding: "18px 22px 16px",
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          gap: 10,
-        }}
-      >
+      <div className="pt-18 px-22 pb-16 flex-1 flex flex-col gap-10">
         <div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-            <h2
-              className="display"
-              style={{
-                margin: 0,
-                fontSize: 28,
-                fontWeight: 500,
-                letterSpacing: "-0.012em",
-                color: "var(--ink)",
-                lineHeight: 1.05,
-              }}
-            >
+          <div className="flex items-baseline gap-10 flex-wrap">
+            <h2 className="font-display m-0 text-[28px] font-medium tracking-[-0.012em] text-graphite leading-[1.05]">
               {s.name}
             </h2>
-            <span style={{ fontSize: 13, color: "var(--ink-muted)" }}>
+            <span className="text-[13px] text-graphite-muted">
               {stage} · {s.location_city}
             </span>
           </div>
-          <div
-            style={{ fontSize: 13.5, color: "var(--ink-muted)", marginTop: 4, lineHeight: 1.4 }}
-          >
+          <div className="text-[13.5px] text-graphite-muted mt-4 leading-[1.4]">
             {s.one_liner}
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        <div className="grid grid-cols-2 gap-8">
           <PromptChip label="Hiring" value={need || "—"} tone="copper" />
           <PromptChip label="Team" value={`${s.team_size} people`} tone="blue" />
         </div>
@@ -402,25 +236,17 @@ function StartupSwipeCard({ s, onTap }: { s: Startup; onTap: () => void }) {
           <PromptChip label="Mission" value={s.mission_keywords[0]} tone="sand" wide />
         )}
 
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: "auto" }}>
+        <div className="flex flex-wrap gap-5 mt-auto">
           {(s.trust_badges ?? []).slice(0, 3).map((b) => (
             <span
               key={b}
-              style={{
-                fontSize: 10.5,
-                padding: "3px 9px",
-                borderRadius: 999,
-                background: "var(--whisper-200)",
-                color: "var(--ink)",
-                border: "1px solid var(--sand-300)",
-                letterSpacing: "0.02em",
-              }}
+              className="text-[10.5px] py-3 px-9 rounded-full bg-pearl-200 text-graphite border border-pearl-300 tracking-[0.02em]"
             >
               {b}
             </span>
           ))}
-          <span style={{ flex: 1 }} />
-          <span style={{ fontSize: 11, color: "var(--ink-light)", alignSelf: "center" }}>
+          <span className="flex-1" />
+          <span className="text-[11px] text-graphite-light self-center">
             Tap to read more →
           </span>
         </div>
@@ -439,12 +265,12 @@ interface CircleActionProps {
 
 function CircleAction({ children, label, tone = "blue", onClick, small = false }: CircleActionProps) {
   const colorMap = {
-    clay: "var(--clay)",
+    clay: "#DC2626",
     blue: "var(--nucleus-blue)",
     sage: "var(--sage)",
   } as const;
   const ringMap = {
-    clay: "rgba(178,84,56,0.25)",
+    clay: "rgba(220,38,38,0.25)",
     blue: "rgba(15,44,79,0.20)",
     sage: "rgba(45,74,58,0.25)",
   } as const;
@@ -454,26 +280,12 @@ function CircleAction({ children, label, tone = "blue", onClick, small = false }
       onClick={onClick}
       aria-label={label}
       title={label}
+      className="rounded-full bg-white flex items-center justify-center cursor-pointer transition-transform duration-[120ms] shadow-[0_4px_12px_rgba(15,44,79,0.12),0_1px_3px_rgba(15,44,79,0.08)] hover:-translate-y-2"
       style={{
         width: size,
         height: size,
-        borderRadius: "50%",
-        background: "var(--white)",
         color: colorMap[tone],
         border: `1.5px solid ${ringMap[tone]}`,
-        boxShadow:
-          "0 4px 12px rgba(15,44,79,0.12), 0 1px 3px rgba(15,44,79,0.08)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        cursor: "pointer",
-        transition: "transform 0.12s",
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.transform = "translateY(-2px)";
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.transform = "translateY(0)";
       }}
     >
       {children}
@@ -490,7 +302,10 @@ interface SwipeDeckProps {
   onView?: (item: Person | Startup) => void;
   onConnect?: (item: Person | Startup) => void;
   onPass?: (item: Person | Startup) => void;
+  connectedIds?: Set<string>;
+  passedIds?: Set<string>;
   emptyText?: string;
+  onComplete?: () => void;
 }
 
 export function SwipeDeck({
@@ -499,7 +314,10 @@ export function SwipeDeck({
   onView,
   onConnect,
   onPass,
+  connectedIds,
+  passedIds,
   emptyText,
+  onComplete,
 }: SwipeDeckProps) {
   const [idx, setIdx] = useState(0);
   const [drag, setDrag] = useState({ x: 0, y: 0 });
@@ -523,13 +341,15 @@ export function SwipeDeck({
       setExit(dir);
       if (dir === "right") onConnect?.(top);
       else onPass?.(top);
+      const isLast = idx === items.length - 1;
       setTimeout(() => {
         setIdx((i) => i + 1);
         setDrag({ x: 0, y: 0 });
         setExit(null);
+        if (isLast) onComplete?.();
       }, 280);
     },
-    [top, exit, onConnect, onPass],
+    [top, exit, onConnect, onPass, idx, items.length, onComplete],
   );
 
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
@@ -548,8 +368,13 @@ export function SwipeDeck({
   const onPointerUp = () => {
     if (!startRef.current) return;
     startRef.current = null;
-    if (Math.abs(drag.x) > 110) commit(drag.x > 0 ? "right" : "left");
-    else setDrag({ x: 0, y: 0 });
+    if (!movedRef.current && top) {
+      onView?.(top);
+    } else if (Math.abs(drag.x) > 110) {
+      commit(drag.x > 0 ? "right" : "left");
+    } else {
+      setDrag({ x: 0, y: 0 });
+    }
   };
 
   const handleTap = (item: Person | Startup) => () => {
@@ -569,22 +394,11 @@ export function SwipeDeck({
 
   if (!top) {
     return (
-      <div
-        style={{
-          height: 600,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "var(--ink-muted)",
-          textAlign: "center",
-          gap: 14,
-        }}
-      >
-        <div className="display" style={{ fontSize: 32, color: "var(--nucleus-blue)" }}>
+      <div className="h-[600px] flex flex-col items-center justify-center text-graphite-muted text-center gap-14">
+        <div className="font-display text-[32px] text-nucleus-blue">
           You've reached the end.
         </div>
-        <div style={{ fontSize: 14 }}>
+        <div className="text-[14px]">
           {emptyText ?? "No more profiles match those filters."}
         </div>
         <button className="btn btn-ghost" onClick={() => setIdx(0)}>
@@ -621,17 +435,15 @@ export function SwipeDeck({
     );
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 18 }}>
-      <div style={{ position: "relative", width: "min(420px, 92vw)", height: 620, perspective: "1200px" }}>
+    <div className="flex flex-col items-center gap-18">
+      <div className="relative w-[min(420px,92vw)] h-[620px] perspective-[1200px]">
         {next2 && (
           <div
+            key={`bg2-${next2.id}`}
+            className="absolute inset-0 pointer-events-none transition-[transform,opacity] duration-[280ms]"
             style={{
-              position: "absolute",
-              inset: 0,
-              transform: "translateY(20px) scale(0.92)",
-              opacity: 0.5,
-              pointerEvents: "none",
-              transition: "transform 0.22s, opacity 0.22s",
+              transform: exit ? "translateY(10px) scale(0.96)" : "translateY(20px) scale(0.92)",
+              opacity: exit ? 0.85 : 0.5,
             }}
           >
             {renderCard(next2)}
@@ -639,73 +451,52 @@ export function SwipeDeck({
         )}
         {next1 && (
           <div
+            key={`bg1-${next1.id}`}
+            className="absolute inset-0 pointer-events-none transition-[transform,opacity] duration-[280ms]"
             style={{
-              position: "absolute",
-              inset: 0,
-              transform: "translateY(10px) scale(0.96)",
-              opacity: 0.85,
-              pointerEvents: "none",
-              transition: "transform 0.22s, opacity 0.22s",
+              transform: exit ? "translateY(0) scale(1)" : "translateY(10px) scale(0.96)",
+              opacity: exit ? 1 : 0.85,
             }}
           >
             {renderCard(next1)}
           </div>
         )}
         <div
+          key={top.id}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
+          className="absolute inset-0 touch-none"
           style={{
-            position: "absolute",
-            inset: 0,
             transform: topTransform,
             transition: topTransition,
-            opacity: exit ? 0.2 : 1,
-            touchAction: "none",
+            opacity: exit ? 0 : 1,
           }}
         >
           {renderCard(top)}
 
           <div
+            className="absolute top-38 left-28 py-8 px-16 rounded-[8px] pointer-events-none font-display text-[30px] italic tracking-[0.02em]"
             style={{
-              position: "absolute",
-              top: 38,
-              left: 28,
-              padding: "8px 16px",
-              borderRadius: 8,
               border: "3px solid var(--clay)",
               color: "var(--clay)",
               background: "rgba(178,84,56,0.08)",
-              fontFamily: "var(--font-display)",
-              fontSize: 30,
-              fontStyle: "italic",
               transform: `rotate(-12deg) scale(${!goingRight ? dragOpacity : 0})`,
               opacity: !goingRight ? dragOpacity : 0,
-              pointerEvents: "none",
-              letterSpacing: "0.02em",
               transition: startRef.current ? "none" : "opacity 0.2s, transform 0.2s",
             }}
           >
             Pass
           </div>
           <div
+            className="absolute top-38 right-28 py-8 px-16 rounded-[8px] pointer-events-none font-display text-[30px] italic tracking-[0.02em]"
             style={{
-              position: "absolute",
-              top: 38,
-              right: 28,
-              padding: "8px 16px",
-              borderRadius: 8,
               border: "3px solid var(--sage)",
               color: "var(--sage)",
               background: "rgba(45,74,58,0.08)",
-              fontFamily: "var(--font-display)",
-              fontSize: 30,
-              fontStyle: "italic",
               transform: `rotate(12deg) scale(${goingRight ? dragOpacity : 0})`,
               opacity: goingRight ? dragOpacity : 0,
-              pointerEvents: "none",
-              letterSpacing: "0.02em",
               transition: startRef.current ? "none" : "opacity 0.2s, transform 0.2s",
             }}
           >
@@ -714,7 +505,7 @@ export function SwipeDeck({
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 18, alignItems: "center" }}>
+      <div className="flex gap-18 items-center">
         <CircleAction label="Pass" tone="clay" onClick={() => commit("left")}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <line x1="6" y1="6" x2="18" y2="18" />
@@ -743,11 +534,11 @@ export function SwipeDeck({
         </CircleAction>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, marginTop: 4 }}>
-        <div style={{ fontSize: 11, color: "var(--ink-muted)", letterSpacing: "0.04em" }}>
+      <div className="flex flex-col items-center gap-6 mt-4">
+        <div className="text-[11px] text-graphite-muted tracking-[0.04em]">
           {idx + 1} of {items.length}
         </div>
-        <div style={{ fontSize: 10.5, color: "var(--ink-light)" }}>
+        <div className="text-[10.5px] text-graphite-light">
           ← pass · → connect · ↵ details
         </div>
       </div>
