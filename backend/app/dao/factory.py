@@ -7,6 +7,7 @@ Services (not into routes) and pull DAOs off it. Routes never touch DAOs directl
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.dao.daos.auto_match_dao import AutoMatchSentDAO, AutoMatchSubscriptionDAO
 from app.dao.daos.follow_dao import StartupFollowDAO, TalentFollowDAO
 from app.dao.daos.profile_embedding_dao import ProfileEmbeddingDAO
 from app.dao.daos.startup_dao import StartupDAO
@@ -61,6 +62,16 @@ class DAOFactory:
         if "swipe_list" not in self._daos:
             self._daos["swipe_list"] = SwipeListDAO(self.session)
         return self._daos["swipe_list"]  # type: ignore[return-value]
+
+    def get_auto_match_subscription_dao(self) -> AutoMatchSubscriptionDAO:
+        if "auto_match_subscription" not in self._daos:
+            self._daos["auto_match_subscription"] = AutoMatchSubscriptionDAO(self.session)
+        return self._daos["auto_match_subscription"]  # type: ignore[return-value]
+
+    def get_auto_match_sent_dao(self) -> AutoMatchSentDAO:
+        if "auto_match_sent" not in self._daos:
+            self._daos["auto_match_sent"] = AutoMatchSentDAO(self.session)
+        return self._daos["auto_match_sent"]  # type: ignore[return-value]
 
     async def commit(self) -> None:
         await self.session.commit()
