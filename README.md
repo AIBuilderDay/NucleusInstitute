@@ -84,6 +84,59 @@ pluggable, see [PLAN.md §2a](PLAN.md).
 
 ---
 
+## Matchers
+
+Two matchers ship today, registered behind a uniform `MatchResult` contract so
+the frontend match card renders identically regardless of source. Pick one per
+request with `?matcher=<name>`, or hit `/compare` to run all of them in
+parallel.
+
+### `rule_filter` (default, Phase 1)
+
+Deterministic, no LLM. Two stages: hard filters that eliminate impossible
+matches (availability, role-category, comp band, location), then a weighted
+sum across seven 0–1 dimensions (role, sector, stage, skills, mission,
+location, risk). Weights are role-category-specific — mentors only weigh
+sector + mission, executives weigh all seven. Fast, explainable, free. See
+[PLAN.md §4](PLAN.md).
+
+### `agentic_filter` (Phase 2)
+
+Claude Sonnet 4.6 with **11 in-process FastMCP tools** that filter and search
+the candidate pool. The agent's job is to navigate the filter space — pick the
+right tool for the focal entity (`find_investors` for a fundraising startup,
+`find_operators` for a startup hiring leadership, `find_startups` for a talent
+looking for a role) and broaden filters if the first cut returns too few
+strong matches. **Score authority stays with `rule_filter`** so the demo's
+`/compare` view stays meaningful; the agent only re-orders survivors and
+writes the narrative `reasons` field (PLAN.md §7.5).
+
+What you get over `rule_filter`:
+
+- **Network-aware routing**: a startup with `seeking_investment=True` actually
+  gets investor candidates surfaced via `find_investors`, not stuffed through
+  the wrong rule_filter weights. Same for service providers, advisors, board.
+- **Narrative reasons** that reference real fields — *"Fractional CFO comp
+  $120K–$180K overlaps Marcus's $150K minimum, fundraising listed as required
+  skill"* — instead of `rule_filter`'s templated *"Sector overlap:
+  life_sciences"*.
+- **Adaptive search** — if a strict filter returns fewer than `top_k` strong
+  matches, the agent loosens one dimension and retries (capped at 4 tool calls
+  per request).
+
+Requires `ANTHROPIC_API_KEY` in `backend/.env`. Each request costs 1–4 API
+calls (~16s end-to-end against the seeded corpus). If the key is missing,
+`/match/...?matcher=agentic_filter` returns 503 and `/compare` falls back to
+`rule_filter` only. Full design in [PLAN.md §7](PLAN.md).
+
+The 11 tools: `find_operators`, `find_mentors`, `find_advisors`,
+`find_board_members`, `find_investors`, `find_service_providers`,
+`find_students_interns`, `find_startups`, `get_talent`, `get_startup`,
+`count` — split by filter schema (one tool per match-flow), not one
+polymorphic `find_talent` with conditional fields.
+
+---
+
 ## What the demo does **not** do
 
 - No auth, no sessions, no users.

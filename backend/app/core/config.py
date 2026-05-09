@@ -9,7 +9,6 @@ Mirrors the HEAL FastAPI template (`fastapi-1password-template`):
 
 import logging
 from typing import Any
-from urllib.parse import quote_plus
 
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
@@ -33,26 +32,23 @@ class Settings(BaseSettings):
     log_level: str = "info"
 
     # -------------------------------------------------------------------------
-    # Postgres
+    # Database — SQLite via aiosqlite. Path is relative to backend/ (the
+    # cwd uvicorn runs in via `task dev`). Override with a full URL like
+    # `sqlite+aiosqlite:////absolute/path/nucleus.db` if you want.
     # -------------------------------------------------------------------------
-    db_host: str = "localhost"
-    db_port: int = 5432
-    db_user: str = "nucleus"
-    db_password: str = "nucleus"
-    db_name: str = "nucleus"
-
-    @property
-    def database_url(self) -> str:
-        """Async psycopg URL for SQLAlchemy 2.0+."""
-        user = quote_plus(self.db_user)
-        password = quote_plus(self.db_password)
-        return f"postgresql+psycopg://{user}:{password}@{self.db_host}:{self.db_port}/{self.db_name}"
+    database_url: str = "sqlite+aiosqlite:///./data/nucleus.db"
 
     # -------------------------------------------------------------------------
     # Matching algorithm selection. Overridable per-request via `?matcher=...`.
     # See PLAN.md §2a for the full registry contract.
     # -------------------------------------------------------------------------
     default_matcher: str = "rule_filter"
+
+    # -------------------------------------------------------------------------
+    # Anthropic API — required for the AgenticMatcher (Phase 2). Optional so
+    # the app boots without it; AgenticMatcher will refuse to run if missing.
+    # -------------------------------------------------------------------------
+    anthropic_api_key: str | None = None
 
     # -------------------------------------------------------------------------
     # CORS — comma-separated list of allowed origins for the frontend.

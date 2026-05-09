@@ -1,14 +1,18 @@
 """Synthetic Utah profile seeder.
 
-Loads `backend/data/seed/nucleus_seed.json` on app startup and inserts every
-talent + startup if the tables are empty. Persistent across `docker compose
-down -v` because the JSON is in the repo, not the volume.
+Two data sources, both loaded at app startup when the Talent and Startup tables
+are empty:
 
-To add more profiles: edit the JSON, restart the app — the tables will be
-empty after a hard reset, so seeding re-runs.
+1. `backend/data/seed/nucleus_seed.json` — hand-curated, hand-tuned profiles
+   with personality (real bios, prior companies, exit counts, university
+   affiliations). Source of truth for demo-quality examples.
+2. `app.seed.generator.build_synthetic_batch` — deterministic procedural
+   generator that produces hundreds more Utah-flavored profiles. Same RNG
+   seed every boot, so the dataset is reproducible across restarts/tests.
 
-To force a re-seed without deleting the container: truncate both tables, then
-restart the app.
+Persistent across `docker compose down -v` because both sources live in the
+repo, not the database volume. To force a re-seed without deleting the
+container: truncate both tables, then restart the app.
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ from app.model.database.startup import Startup
 from app.model.database.talent import Talent
 from app.model.schema.startup import StartupCreate
 from app.model.schema.talent import TalentCreate
+from app.seed.generator import build_synthetic_batch
 
 logger = settings.logger
 
@@ -61,18 +66,27 @@ async def seed_if_empty(session: AsyncSession) -> dict[str, int] | None:
         return None
 
     seed = _load_seed_file()
-    if not seed["talents"] and not seed["startups"]:
+    generated = build_synthetic_batch()
+    logger.info(
+        f"Generated synthetic batch: {len(generated['talents'])} talents, "
+        f"{len(generated['startups'])} startups"
+    )
+
+    talents = seed["talents"] + generated["talents"]
+    startups = seed["startups"] + generated["startups"]
+
+    if not talents and not startups:
         return None
 
     inserted = {"talents": 0, "startups": 0}
 
-    for talent_dict in seed["talents"]:
+    for talent_dict in talents:
         # Validate via Pydantic so a bad row raises early with a clear message.
         validated = TalentCreate.model_validate(talent_dict)
         session.add(Talent(**validated.model_dump(mode="json")))
         inserted["talents"] += 1
 
-    for startup_dict in seed["startups"]:
+    for startup_dict in startups:
         validated = StartupCreate.model_validate(startup_dict)
         session.add(Startup(**validated.model_dump(mode="json")))
         inserted["startups"] += 1

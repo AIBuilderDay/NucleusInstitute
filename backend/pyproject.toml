@@ -8,12 +8,14 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "sqlalchemy[asyncio]>=2.0.0",
-    "psycopg[pool,binary]>=3.2.0",
+    "aiosqlite>=0.20.0",
     "pydantic[email]>=2.0.0",
     "pydantic-settings>=2.0.0",
     "httpx>=0.27.0",
     # Provides `python_sentry_logger_wrapper.get_logger` — same logger as the HEAL FastAPI template.
     "sentry-struct-logger",
+    "fastmcp>=3.2.4",
+    "anthropic>=0.100.0",
 ]
 
 [project.optional-dependencies]
