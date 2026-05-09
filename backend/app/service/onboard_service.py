@@ -14,6 +14,7 @@ Mirrors the tool-use loop in app.provider.matching.agentic_filter.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 from uuid import UUID
 
@@ -29,6 +30,80 @@ from app.model.schema.auth import GoogleUserInfo, LinkedInUserInfo
 MODEL_ID = "claude-sonnet-4-6"
 MAX_LOOP_ITERATIONS = 6  # 1 initial + up to 5 follow-ups; leaves room for retries
 MAX_TOKENS = 4096
+
+
+from dataclasses import dataclass
+
+
+@dataclass
+class OnboardAgentRun:
+    """Everything the route needs to build an OnboardAgentResponse.
+
+    Returned from `OnboardService.create_talent_from_oidc`. The route flattens
+    this into the JSON response. `agent_raw_response` is always populated when
+    the agent reached a final-text turn, even if envelope parsing failed — so
+    the frontend can display the verbatim <REASONING> block as fallback."""
+
+    talent: Talent
+    agent_notes: str | None
+    confidence: float | None
+    reasoning_bullets: list[str]
+    agent_raw_response: str | None
+
+
+def _parse_onboard_envelope(
+    text: str | None,
+) -> tuple[float | None, list[str], str | None]:
+    """Pull (confidence, reasoning_bullets, agent_notes) out of the agent's
+    final-turn text. The prompt asks for a <REASONING>...</REASONING> wrapper
+    around a JSON object with `confidence_pct`, `reasoning_bullets`, and
+    `agent_notes`. Returns (None, [], None) on any parse failure — the caller
+    still surfaces the raw text via OnboardAgentRun.agent_raw_response."""
+    if not text:
+        return None, [], None
+
+    tag_match = re.search(
+        r"<REASONING>([\s\S]*?)</REASONING>", text, flags=re.IGNORECASE
+    )
+    body = tag_match.group(1) if tag_match else text
+    body = body.strip()
+    body = re.sub(r"^```(?:json)?\s*", "", body)
+    body = re.sub(r"\s*```$", "", body)
+
+    obj_match = re.search(r"\{[\s\S]*\}", body)
+    if not obj_match:
+        # No JSON found — surface the whole text as agent_notes so the user
+        # still sees the agent's words, even if structured fields are missing.
+        return None, [], text.strip() or None
+    try:
+        data = json.loads(obj_match.group(0))
+    except json.JSONDecodeError:
+        return None, [], text.strip() or None
+    if not isinstance(data, dict):
+        return None, [], text.strip() or None
+
+    raw_pct = data.get("confidence_pct")
+    confidence: float | None = None
+    if raw_pct is not None:
+        try:
+            confidence = max(0.0, min(1.0, float(raw_pct) / 100.0))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            confidence = None
+
+    raw_bullets = data.get("reasoning_bullets")
+    bullets_list = raw_bullets if isinstance(raw_bullets, list) else []
+    reasoning_bullets = [
+        str(b).strip() for b in bullets_list if isinstance(b, str) and b.strip()
+    ]
+
+    notes_raw = data.get("agent_notes")
+    agent_notes = (
+        notes_raw.strip()
+        if isinstance(notes_raw, str) and notes_raw.strip()
+        else None
+    )
+
+    return confidence, reasoning_bullets, agent_notes
 
 
 class OnboardService:
@@ -51,8 +126,8 @@ class OnboardService:
         userinfo: LinkedInUserInfo | GoogleUserInfo,
         resume_text: str | None,
         provider: str,
-    ) -> tuple[Talent, str | None]:
-        """Run the agent loop, return (saved Talent, optional agent_notes).
+    ) -> "OnboardAgentRun":
+        """Run the agent loop, return a run summary the route can flatten into the response.
 
         `provider` is "linkedin" or "google" — passed through to the prompt so
         the agent knows which OIDC source the userinfo came from. Both providers
@@ -91,7 +166,7 @@ class OnboardService:
 
             saved_talent_id: UUID | None = None
             conflict_talent_id: UUID | None = None
-            agent_notes: str | None = None
+            agent_raw: str | None = None
 
             for _ in range(MAX_LOOP_ITERATIONS):
                 response = await client.messages.create(
@@ -104,7 +179,7 @@ class OnboardService:
                 messages.append({"role": "assistant", "content": response.content})
 
                 if response.stop_reason != "tool_use":
-                    agent_notes = "".join(
+                    agent_raw = "".join(
                         b.text
                         for b in response.content
                         if getattr(b, "type", None) == "text"
@@ -161,7 +236,14 @@ class OnboardService:
                 status_code=500,
                 detail=f"Created talent {saved_talent_id} not found on read-back",
             )
-        return talent, agent_notes
+        confidence, reasoning_bullets, agent_notes = _parse_onboard_envelope(agent_raw)
+        return OnboardAgentRun(
+            talent=talent,
+            agent_notes=agent_notes,
+            confidence=confidence,
+            reasoning_bullets=reasoning_bullets,
+            agent_raw_response=agent_raw,
+        )
 
     # -------------------------------------------------------------------------
     # Prompt construction
@@ -235,8 +317,24 @@ class OnboardService:
             "  4. If the tool returns status=validation_error, fix the specific fields "
             "the error mentions and call ONCE more. Don't loop indefinitely.\n"
             "  5. If status=conflict, stop — the user already has a profile.\n"
-            "  6. After status=created, respond with one short sentence acknowledging "
-            "the save (no JSON, no markdown, no follow-up tool calls).\n"
+            "  6. After status=created, emit a single <REASONING>...</REASONING> block "
+            "as your final response (nothing outside it):\n\n"
+            "       <REASONING>\n"
+            "       {\n"
+            "         \"confidence_pct\": 0-100,         // your read on how solid the inferred profile is\n"
+            "         \"reasoning_bullets\": [\"...\", \"...\"], // 3-5 short bullets explaining the choices that mattered (which fields you inferred vs took verbatim, which were guesses)\n"
+            "         \"agent_notes\": \"one short sentence acknowledging the save\"\n"
+            "       }\n"
+            "       </REASONING>\n\n"
+            "JUSTIFICATION GUIDELINES:\n"
+            "  - Write each bullet yourself in your own words. Cite the SPECIFIC field "
+            "and source: e.g. 'role_category=advisor — resume mentions \"fractional CTO\" "
+            "with no current full-time role.' Vague bullets are useless.\n"
+            "  - `confidence_pct` is an integer 0-100. Calibrate roughly:\n"
+            "      75-100  rich resume + clear role signal; very few guesses\n"
+            "      45-74   moderate signal; a few fields inferred from indirect cues\n"
+            "      0-44    sparse OIDC-only data; many defaults applied\n"
+            "  - Do not call any tools after emitting the REASONING block.\n"
         )
 
     def _user_prompt(

@@ -33,6 +33,24 @@ class MatchResult(BaseModel):
         description="Hard-filter failures explaining why a match was excluded",
     )
     matcher: str = Field(description="Which provider produced this result (rule_filter, embedding, ...)")
+    confidence: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Agent-supplied 0–1 confidence in this pick. Only set when an LLM matcher produced the result.",
+    )
+    agent_notes: str | None = Field(
+        default=None,
+        description="One-sentence overall take written by the agent. None for deterministic matchers.",
+    )
+    agent_raw_response: str | None = Field(
+        default=None,
+        description=(
+            "The agent's full final-turn text (typically a <REASONING>...</REASONING> "
+            "block). Carried through unparsed so the frontend can re-parse or display "
+            "it verbatim if backend parsing produced incomplete structured fields."
+        ),
+    )
 
 
 class TalentMatchResponse(BaseModel):

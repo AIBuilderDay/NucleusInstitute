@@ -30,13 +30,16 @@ async def onboard_agent(
         userinfo = payload.google_userinfo
         provider = "google"
 
-    talent, agent_notes = await service.create_talent_from_oidc(
+    run = await service.create_talent_from_oidc(
         userinfo=userinfo,
         resume_text=payload.resume_text,
         provider=provider,
     )
     return OnboardAgentResponse(
-        talent_id=talent.id,
-        talent=TalentResponse.model_validate(talent),
-        agent_notes=agent_notes,
+        talent_id=run.talent.id,
+        talent=TalentResponse.model_validate(run.talent),
+        agent_notes=run.agent_notes,
+        confidence=run.confidence,
+        reasoning_bullets=run.reasoning_bullets,
+        agent_raw_response=run.agent_raw_response,
     )

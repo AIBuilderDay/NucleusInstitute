@@ -101,6 +101,13 @@ What you get over `rule_filter`:
   $120K–$180K overlaps Marcus's $150K minimum, fundraising listed as required
   skill"* — instead of `rule_filter`'s templated *"Sector overlap:
   life_sciences"*.
+- **Per-pick confidence + agent notes.** Each `MatchResult` from
+  `agentic_filter` now carries an agent-supplied `confidence` (0–1; the prompt
+  asks for a 0–100 percentage and the parser stores it as a unit float),
+  one-sentence `agent_notes` summarizing the run, and the unparsed
+  `agent_raw_response` (a `<REASONING>...</REASONING>` block) so the frontend
+  can re-parse or display verbatim if backend parsing missed any structured
+  fields. Deterministic matchers leave these fields `null`.
 - **Adaptive search** — if a strict filter returns fewer than `top_k` strong
   matches, the agent loosens one dimension and retries (capped at 4 tool calls
   per request).
@@ -475,6 +482,13 @@ things the agent can suggest:
   anchored on real fields from the target's profile (prior companies,
   projects, headline), plus a self-reported `confidence` ∈ [0, 1] and
   bucketed label (`low`/`medium`/`high`).
+- **`agent_raw_response`**: the agent emits its final answer wrapped in a
+  `<REASONING>...</REASONING>` block; that whole block (parsed JSON or not)
+  is now passed through unmodified so the frontend has a fallback if any
+  structured field came back malformed. If parsing fails completely the
+  endpoint still returns 200 with the structural facts populated and the raw
+  text in `agent_raw_response` — never a 502 just because the model went
+  off-format.
 
 **What it accomplishes.** The matching surfaces (`/match`, `/discover`) tell
 you *who* to reach out to. This endpoint tells you *how*. Instead of staring
@@ -581,6 +595,15 @@ follow-up PR.
               status=created → service returns Talent → 200 OK
 ```
 
+After the tool returns `status=created`, the agent emits a
+`<REASONING>...</REASONING>` block as its final turn. Inside the tag is a
+JSON object with `confidence_pct` (0–100; stored on the response as a 0–1
+`confidence`), `reasoning_bullets` (3–5 short bullets explaining which
+fields were taken verbatim vs. inferred vs. defaulted), and `agent_notes`
+(one-line acknowledgement). The whole `<REASONING>` block is also surfaced
+on the response as `agent_raw_response` so the frontend can re-parse or
+display it verbatim if any structured field came back missing.
+
 The MCP tool calls `TalentService.create()` **in-process** (not via HTTP
 loopback), same pattern as the matching agent. No subprocess, no stdio. The
 DAOFactory the tool uses is the same one FastAPI injected into the request,
@@ -646,7 +669,18 @@ curl -X POST http://localhost:8765/api/v1/onboard/agent \
     },
     "resume_text": "10 years backend engineering at Stripe and Square. Currently advising 3 Utah fintech startups. Open to fractional CTO roles. Salt Lake City, remote OK."
   }'
-# → {"talent_id":"<uuid>", "talent": {...full Talent...}, "agent_notes": "Saved Jane's profile..."}
+# → {
+#     "talent_id":"<uuid>",
+#     "talent": {...full Talent...},
+#     "agent_notes": "Saved Jane's profile...",
+#     "confidence": 0.78,
+#     "reasoning_bullets": [
+#       "role_category=advisor — resume mentions \"fractional CTO advising 3 startups\"",
+#       "sectors_of_interest=[fintech] — derived from resume employer list (Stripe/Square)",
+#       "location defaulted to Salt Lake City, UT — resume specifies SLC + remote OK"
+#     ],
+#     "agent_raw_response": "<REASONING>{...full envelope...}</REASONING>"
+#   }
 
 # 4. Confirm the row exists:
 curl http://localhost:8765/api/v1/talent/<talent_id>

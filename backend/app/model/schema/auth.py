@@ -90,3 +90,21 @@ class OnboardAgentResponse(BaseModel):
     talent_id: UUID
     talent: TalentResponse
     agent_notes: str | None = None
+    confidence: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Agent-supplied 0–1 confidence in the inferred profile.",
+    )
+    reasoning_bullets: list[str] = Field(
+        default_factory=list,
+        description="Agent-written bullets explaining how it filled out the profile.",
+    )
+    agent_raw_response: str | None = Field(
+        default=None,
+        description=(
+            "The agent's full final-turn text (typically a <REASONING>...</REASONING> "
+            "block). Carried through unparsed so the frontend can re-parse or display "
+            "it verbatim if backend parsing produced incomplete structured fields."
+        ),
+    )

@@ -71,3 +71,11 @@ class ConnectStrategyResponse(BaseModel):
     approach_bullets: list[str] = Field(default_factory=list)
     questions_to_ask: list[str] = Field(default_factory=list)
     agent_notes: str | None = None
+    agent_raw_response: str | None = Field(
+        default=None,
+        description=(
+            "The agent's full final-turn text (typically a <REASONING>...</REASONING> "
+            "block). Carried through unparsed so the frontend can fall back to verbatim "
+            "display if backend parsing missed any structured fields."
+        ),
+    )

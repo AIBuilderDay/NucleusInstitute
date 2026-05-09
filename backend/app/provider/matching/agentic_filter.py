@@ -140,6 +140,8 @@ class AgenticFilterMatcher(MatchingProvider):
             ]
 
             picks: list[dict] = []
+            agent_notes: str | None = None
+            agent_raw: str | None = None
             for _ in range(MAX_LOOP_ITERATIONS):
                 response = await client.messages.create(
                     model=MODEL_ID,
@@ -151,10 +153,10 @@ class AgenticFilterMatcher(MatchingProvider):
                 messages.append({"role": "assistant", "content": response.content})
 
                 if response.stop_reason != "tool_use":
-                    final_text = "".join(
+                    agent_raw = "".join(
                         b.text for b in response.content if getattr(b, "type", None) == "text"
                     )
-                    picks = self._parse_picks(final_text)
+                    picks, agent_notes = self._parse_envelope(agent_raw)
                     break
 
                 # Execute every tool_use block in this turn, batch results into
@@ -180,7 +182,9 @@ class AgenticFilterMatcher(MatchingProvider):
                     )
                 messages.append({"role": "user", "content": tool_results})
 
-        return self._compose(focal, candidates, picks, top_k, direction)
+        return self._compose(
+            focal, candidates, picks, agent_notes, agent_raw, top_k, direction
+        )
 
     # -------------------------------------------------------------------------
     # Prompt construction
@@ -224,17 +228,35 @@ class AgenticFilterMatcher(MatchingProvider):
             "3. Use get_talent / get_startup only when a summary is ambiguous and "
             "the full profile would change your ranking.\n"
             "4. Use `count` as a cheap probe before committing to a wide search.\n\n"
-            "Final answer format: when you are done, respond with ONLY a JSON "
-            "array (no prose, no markdown fences). Each item is an object with "
-            "`id` and `reasons`. Example:\n\n"
-            '[\n'
-            '  {"id": "uuid-here", "reasons": ["Strong sector overlap: AI", "Stage match: seed"]},\n'
-            '  {"id": "uuid-here", "reasons": ["..."]}\n'
-            ']\n\n'
-            f"The list must be in descending order of fit (best first), at most "
-            f"{top_k} items. Each `reasons` array contains 1-3 short, specific "
-            "bullets explaining why this candidate is a strong match. Do NOT "
-            "include the focal entity in your output."
+            "Final answer format: emit a single <REASONING>...</REASONING> block "
+            "as your entire response. Inside the tag put a JSON object (no "
+            "markdown fences) with `picks` and `agent_notes`. Each pick has "
+            "`id`, `confidence_pct`, and `reasons`. Example:\n\n"
+            "<REASONING>\n"
+            '{\n'
+            '  "picks": [\n'
+            '    {"id": "uuid-here", "confidence_pct": 82, "reasons": ["Strong sector overlap: AI", "Stage match: seed"]},\n'
+            '    {"id": "uuid-here", "confidence_pct": 54, "reasons": ["..."]}\n'
+            '  ],\n'
+            '  "agent_notes": "Two strong fits in fintech; rest are stretch picks."\n'
+            "}\n"
+            "</REASONING>\n\n"
+            f"The picks list must be in descending order of fit (best first), at "
+            f"most {top_k} items. Do NOT include the focal entity in your output. "
+            "Do not write anything outside the REASONING tag.\n\n"
+            "JUSTIFICATION GUIDELINES:\n"
+            "  - Write each `reasons` bullet yourself in your own words. Cite a "
+            "specific field from the candidate's profile or the rule_filter "
+            "score that drove your decision (e.g. 'Sector overlap: AI + cyber, "
+            "rule_filter sector dim = 1.0'). Vague reasons are useless.\n"
+            "  - 1-3 bullets per pick. Short, specific, no hedging.\n"
+            "  - `confidence_pct` is an integer 0-100 that reflects YOUR read on "
+            "this pick — not the rule_filter score. Calibrate roughly:\n"
+            "      75-100  multiple strong overlaps + no soft mismatches\n"
+            "      45-74   one strong overlap, some weak signal, viable\n"
+            "      0-44    speculative; flag this honestly\n"
+            "  - `agent_notes` summarizes the run (e.g. 'Two strong fits, three "
+            "stretch picks; would broaden sector if asked again')."
         )
 
     def _user_prompt(self, focal: Talent | Startup, top_k: int) -> str:
@@ -289,28 +311,58 @@ class AgenticFilterMatcher(MatchingProvider):
     # -------------------------------------------------------------------------
     # Final-answer parsing + MatchResult composition
     # -------------------------------------------------------------------------
-    def _parse_picks(self, text: str) -> list[dict]:
-        """Extract a JSON array from the agent's final text. Tolerates leading
-        prose and ```json fences."""
-        cleaned = text.strip()
-        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
-        cleaned = re.sub(r"\s*```$", "", cleaned)
-        match = re.search(r"\[[\s\S]*\]", cleaned)
-        if not match:
-            return []
-        try:
-            data = json.loads(match.group(0))
-        except json.JSONDecodeError:
-            return []
-        if not isinstance(data, list):
-            return []
-        return [d for d in data if isinstance(d, dict) and "id" in d]
+    def _parse_envelope(self, text: str) -> tuple[list[dict], str | None]:
+        """Pull the JSON envelope out of the agent's final text.
+
+        The prompt asks the agent to wrap its answer in <REASONING>...</REASONING>;
+        we match that block first, then fall back to a bare JSON object or array
+        for tolerance against models that drop the tag. Returns (picks, agent_notes)
+        — both empty/None if parsing fails. The raw text is captured separately at
+        the call site so even total parse failure still surfaces something."""
+        tag_match = re.search(
+            r"<REASONING>([\s\S]*?)</REASONING>", text, flags=re.IGNORECASE
+        )
+        body = tag_match.group(1) if tag_match else text
+        body = body.strip()
+        body = re.sub(r"^```(?:json)?\s*", "", body)
+        body = re.sub(r"\s*```$", "", body)
+
+        obj_match = re.search(r"\{[\s\S]*\}", body)
+        if obj_match:
+            try:
+                data = json.loads(obj_match.group(0))
+            except json.JSONDecodeError:
+                data = None
+            if isinstance(data, dict):
+                raw_picks = data.get("picks")
+                picks_list: list = raw_picks if isinstance(raw_picks, list) else []
+                picks = [p for p in picks_list if isinstance(p, dict) and "id" in p]
+                notes_raw = data.get("agent_notes")
+                notes = (
+                    notes_raw.strip()
+                    if isinstance(notes_raw, str) and notes_raw.strip()
+                    else None
+                )
+                return picks, notes
+
+        # Backwards compat: a bare JSON array of picks (older prompt shape).
+        arr_match = re.search(r"\[[\s\S]*\]", body)
+        if arr_match:
+            try:
+                data = json.loads(arr_match.group(0))
+            except json.JSONDecodeError:
+                return [], None
+            if isinstance(data, list):
+                return [d for d in data if isinstance(d, dict) and "id" in d], None
+        return [], None
 
     def _compose(
         self,
         focal: Talent | Startup,
         candidates: list,
         picks: list[dict],
+        agent_notes: str | None,
+        agent_raw: str | None,
         top_k: int,
         direction: str,
     ) -> list[MatchResult]:
@@ -336,6 +388,8 @@ class AgenticFilterMatcher(MatchingProvider):
                 agent_reasons = []
             cleaned_reasons = [str(r) for r in agent_reasons if r]
 
+            confidence = _coerce_confidence(pick.get("confidence_pct"))
+
             results.append(
                 MatchResult(
                     talent_id=rf.talent_id,
@@ -346,6 +400,9 @@ class AgenticFilterMatcher(MatchingProvider):
                     reasons=cleaned_reasons or rf.reasons,
                     blockers=rf.blockers,
                     matcher=self.name,
+                    confidence=confidence,
+                    agent_notes=agent_notes,
+                    agent_raw_response=agent_raw,
                 )
             )
 
@@ -364,6 +421,23 @@ class AgenticFilterMatcher(MatchingProvider):
                     "Fallback: agent returned no usable picks; score from rule_filter",
                     *r.reasons,
                 ]
+                r.agent_raw_response = agent_raw
+                r.agent_notes = agent_notes
                 results.append(r)
 
         return results
+
+
+def _coerce_confidence(raw: object) -> float | None:
+    """Convert the agent's `confidence_pct` (0-100 integer) into a 0-1 float.
+
+    The schema stores 0-1; we ask the agent for a percentage because that's
+    easier to reason about in calibration guidance. Returns None for junk values
+    so the field stays NULL rather than misleadingly defaulting to 0."""
+    if raw is None:
+        return None
+    try:
+        value = float(raw)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, min(1.0, value / 100.0))

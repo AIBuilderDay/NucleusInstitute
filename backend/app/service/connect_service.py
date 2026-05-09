@@ -97,6 +97,7 @@ class ConnectService:
             ]
 
             agent_envelope: dict[str, Any] | None = None
+            agent_raw: str | None = None
             for _ in range(MAX_LOOP_ITERATIONS):
                 response = await client.messages.create(
                     model=MODEL_ID,
@@ -108,12 +109,12 @@ class ConnectService:
                 messages.append({"role": "assistant", "content": response.content})
 
                 if response.stop_reason != "tool_use":
-                    final_text = "".join(
+                    agent_raw = "".join(
                         b.text
                         for b in response.content
                         if getattr(b, "type", None) == "text"
                     )
-                    agent_envelope = self._parse_envelope(final_text)
+                    agent_envelope = self._parse_envelope(agent_raw)
                     break
 
                 tool_results: list[dict[str, Any]] = []
@@ -137,16 +138,31 @@ class ConnectService:
                     )
                 messages.append({"role": "user", "content": tool_results})
 
-        if agent_envelope is None:
-            raise HTTPException(
-                status_code=502,
-                detail="Connect agent did not produce a final answer within the iteration budget",
-            )
-
         # 2. Structural facts — never trust the agent for these.
         facts = await self._compute_structural_facts(payload)
 
-        # 3. Merge agent envelope + facts → response.
+        # 3. If parsing failed, still return 200 with the raw text so the frontend
+        # can display the agent's <REASONING> block verbatim.
+        if agent_envelope is None:
+            return ConnectStrategyResponse(
+                viewer_type=payload.viewer_type,
+                viewer_id=payload.viewer_id,
+                target_type=payload.target_type,
+                target_id=payload.target_id,
+                already_connected=facts["already_connected"],
+                target_follows_viewer=facts["target_follows_viewer"],
+                mutual_connections_count=facts["mutual_connections_count"],
+                network_context=facts["network_context"],
+                confidence=0.5,
+                confidence_label="medium",
+                fit_bullets=[],
+                approach_bullets=[],
+                questions_to_ask=[],
+                agent_notes=None,
+                agent_raw_response=agent_raw,
+            )
+
+        # 4. Merge agent envelope + facts → response.
         confidence, label = _normalize_confidence(
             agent_envelope.get("confidence"),
             agent_envelope.get("confidence_label"),
@@ -166,6 +182,7 @@ class ConnectService:
             approach_bullets=_clean_bullets(agent_envelope.get("approach_bullets")),
             questions_to_ask=_clean_bullets(agent_envelope.get("questions_to_ask")),
             agent_notes=_clean_text(agent_envelope.get("agent_notes")),
+            agent_raw_response=agent_raw,
         )
 
     # -------------------------------------------------------------------------
@@ -287,8 +304,10 @@ class ConnectService:
             "       get_network_context PageRank bracket + percentile for both ends\n"
             "       get_match_score     rule_filter pair score (when one is a talent and one a startup)\n"
             "  3. Aim for 3-5 tool calls total. Don't fan out more than necessary.\n\n"
-            "FINAL ANSWER FORMAT — when you are done, respond with ONLY a JSON "
-            "object (no prose, no markdown fences) matching this shape:\n\n"
+            "FINAL ANSWER FORMAT — emit a single <REASONING>...</REASONING> block "
+            "as your entire response. Inside the tag put a JSON object (no markdown "
+            "fences) matching this shape:\n\n"
+            "  <REASONING>\n"
             "  {\n"
             "    \"confidence\": 0.0-1.0,            // your read on whether this is a strong outreach to make\n"
             "    \"confidence_label\": \"low\" | \"medium\" | \"high\",\n"
@@ -296,7 +315,10 @@ class ConnectService:
             "    \"approach_bullets\": [\"...\", \"...\"], // 3-5 short bullets on HOW the viewer should reach out (channel, hook, do/don't)\n"
             "    \"questions_to_ask\": [\"...\", \"...\"], // 3-5 specific open-ended questions tied to target's actual background\n"
             "    \"agent_notes\": \"one short sentence overall take\"\n"
-            "  }\n\n"
+            "  }\n"
+            "  </REASONING>\n\n"
+            "Write each bullet yourself in your own words — don't echo the prompt. "
+            "Do not write anything outside the REASONING tag.\n\n"
             "BULLET-WRITING RULES:\n"
             "  - Reference SPECIFIC fields from the tool output. Vague advice is useless.\n"
             "    BAD: 'Mention shared interests'\n"
@@ -325,10 +347,20 @@ class ConnectService:
 
     @staticmethod
     def _parse_envelope(text: str) -> dict[str, Any] | None:
-        cleaned = text.strip()
-        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
-        cleaned = re.sub(r"\s*```$", "", cleaned)
-        match = re.search(r"\{[\s\S]*\}", cleaned)
+        """Pull the JSON object out of the agent's final text.
+
+        The prompt asks for a <REASONING>...</REASONING> wrapper; we match that
+        first, then fall back to the first JSON object in the raw text for
+        tolerance against models that drop the tag. Returns None on parse
+        failure — the caller still surfaces the raw text via agent_raw_response."""
+        tag_match = re.search(
+            r"<REASONING>([\s\S]*?)</REASONING>", text, flags=re.IGNORECASE
+        )
+        body = tag_match.group(1) if tag_match else text
+        body = body.strip()
+        body = re.sub(r"^```(?:json)?\s*", "", body)
+        body = re.sub(r"\s*```$", "", body)
+        match = re.search(r"\{[\s\S]*\}", body)
         if not match:
             return None
         try:
