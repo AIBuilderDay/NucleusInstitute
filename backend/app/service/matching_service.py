@@ -68,9 +68,14 @@ class MatchingService:
         startup_id: UUID,
         top_k: int = 5,
         matcher_name: str | None = None,
+        roles: list[str] | None = None,
     ) -> tuple[Startup, str, list[MatchResult]]:
         startup = await self._load_startup(startup_id)
         talents = await self.talent_dao.list_all()
+        if roles:
+            wanted = {r for r in roles if r}
+            if wanted:
+                talents = [t for t in talents if t.role_category in wanted]
         name = self._resolve_matcher_name(matcher_name)
         try:
             matcher = get_matcher(name)

@@ -38,10 +38,17 @@ async def match_startup_to_talent(
     startup_id: UUID,
     top_k: int = Query(5, ge=1, le=50),
     matcher: str | None = Query(None, description="Override default matcher"),
+    roles: list[str] | None = Query(
+        None,
+        description=(
+            "Restrict candidate pool to these role_category values "
+            "(repeat the param: ?roles=mentor&roles=advisor)."
+        ),
+    ),
     service: MatchingService = Depends(MatchingService),
 ) -> StartupMatchResponse:
     startup, name, matches = await service.match_startup_to_talent(
-        startup_id, top_k=top_k, matcher_name=matcher
+        startup_id, top_k=top_k, matcher_name=matcher, roles=roles
     )
     return StartupMatchResponse(
         startup=StartupResponse.model_validate(startup),

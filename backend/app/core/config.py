@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     # Matching algorithm selection. Overridable per-request via `?matcher=...`.
     # See PLAN.md §2a for the full registry contract.
     # -------------------------------------------------------------------------
-    default_matcher: str = "rule_filter"
+    default_matcher: str = "agentic_filter"
 
     # -------------------------------------------------------------------------
     # Anthropic API — required for the AgenticMatcher (Phase 2). Optional so
@@ -97,7 +97,7 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     google_client_id: str = ""
     google_client_secret: str = ""
-    google_redirect_uri: str = "http://localhost:8000/api/v1/auth/google/callback"
+    google_redirect_uri: str = "http://localhost:8765/api/v1/auth/google/callback"
     google_scopes: str = "openid profile email"
 
     # HMAC secret for stateless OAuth `state` cookies. Required in non-dev.

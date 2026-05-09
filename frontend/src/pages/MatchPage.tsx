@@ -181,7 +181,9 @@ export function MatchPage({
         const r =
           direction === "person_to_startups"
             ? await api.matchPerson(personId)
-            : await api.matchStartup(startupId);
+            : await api.matchStartup(startupId, {
+                roles: modeRoles.length ? modeRoles : undefined,
+              });
         if (dead) return;
         const hydrated: MatchResponse = {
           ...r,
@@ -319,34 +321,44 @@ export function MatchPage({
                 ))}
               </select>
             </Field>
-          ) : isPersonDir ? (
-            <Field label="I am…" hint="The talent searching for startups.">
-              <select
-                value={personId}
-                onChange={(e) => setPersonId(e.target.value)}
-                className={selectClass}
-              >
-                {people.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} · {ROLE_CATEGORY_LABEL[p.role_category]}
-                  </option>
-                ))}
-              </select>
-            </Field>
           ) : (
-            <Field label="The startup is…" hint="Whose perspective are we searching from.">
-              <select
-                value={startupId}
-                onChange={(e) => setStartupId(e.target.value)}
-                className={selectClass}
+            <>
+              <Field
+                label="I am…"
+                hint={
+                  isPersonDir
+                    ? "The talent searching for startups."
+                    : "Your role — used to frame matches."
+                }
               >
-                {startups.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} · {SECTOR_LABEL[s.sector]}
-                  </option>
-                ))}
-              </select>
-            </Field>
+                <select
+                  value={personId}
+                  onChange={(e) => setPersonId(e.target.value)}
+                  className={selectClass}
+                >
+                  {people.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} · {ROLE_CATEGORY_LABEL[p.role_category]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              {!isPersonDir && (
+                <Field label="The startup is…" hint="Whose perspective are we searching from.">
+                  <select
+                    value={startupId}
+                    onChange={(e) => setStartupId(e.target.value)}
+                    className={selectClass}
+                  >
+                    {startups.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} · {SECTOR_LABEL[s.sector]}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+            </>
           )}
 
           <Field
