@@ -4,6 +4,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from app.model.schema.profile_extension import (
+    TalentProfileExtensionResponse,
+    TalentProfileExtensionUpsert,
+)
 from app.model.schema.talent import TalentCreate, TalentListResponse, TalentResponse
 from app.service.talent_service import TalentService
 
@@ -46,3 +50,33 @@ async def get_talent(
     if talent is None:
         raise HTTPException(status_code=404, detail=f"Talent {talent_id} not found")
     return TalentResponse.model_validate(talent)
+
+
+@router.get("/{talent_id}/profile", response_model=TalentProfileExtensionResponse)
+async def get_talent_profile_extension(
+    talent_id: UUID,
+    service: TalentService = Depends(TalentService),
+) -> TalentProfileExtensionResponse:
+    talent = await service.get(talent_id)
+    if talent is None:
+        raise HTTPException(status_code=404, detail=f"Talent {talent_id} not found")
+    profile = await service.get_profile_extension(talent_id)
+    if profile is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No extended profile for talent {talent_id}",
+        )
+    return TalentProfileExtensionResponse.model_validate(profile)
+
+
+@router.put("/{talent_id}/profile", response_model=TalentProfileExtensionResponse)
+async def upsert_talent_profile_extension(
+    talent_id: UUID,
+    payload: TalentProfileExtensionUpsert,
+    service: TalentService = Depends(TalentService),
+) -> TalentProfileExtensionResponse:
+    talent = await service.get(talent_id)
+    if talent is None:
+        raise HTTPException(status_code=404, detail=f"Talent {talent_id} not found")
+    profile = await service.upsert_profile_extension(talent_id, payload)
+    return TalentProfileExtensionResponse.model_validate(profile)

@@ -1,6 +1,13 @@
 """Import all ORM models so `Base.metadata` knows about them at create_all time."""
 
 from app.model.database.startup import Startup
+from app.model.database.startup_profile_extension import StartupProfileExtension
 from app.model.database.talent import Talent
+from app.model.database.talent_profile_extension import TalentProfileExtension
 
-__all__ = ["Talent", "Startup"]
+__all__ = [
+    "Talent",
+    "Startup",
+    "TalentProfileExtension",
+    "StartupProfileExtension",
+]

@@ -8,7 +8,9 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dao.daos.startup_dao import StartupDAO
+from app.dao.daos.startup_profile_extension_dao import StartupProfileExtensionDAO
 from app.dao.daos.talent_dao import TalentDAO
+from app.dao.daos.talent_profile_extension_dao import TalentProfileExtensionDAO
 from app.database.connection import get_session
 
 
@@ -26,6 +28,16 @@ class DAOFactory:
         if "startup" not in self._daos:
             self._daos["startup"] = StartupDAO(self.session)
         return self._daos["startup"]  # type: ignore[return-value]
+
+    def get_talent_profile_extension_dao(self) -> TalentProfileExtensionDAO:
+        if "talent_profile_extension" not in self._daos:
+            self._daos["talent_profile_extension"] = TalentProfileExtensionDAO(self.session)
+        return self._daos["talent_profile_extension"]  # type: ignore[return-value]
+
+    def get_startup_profile_extension_dao(self) -> StartupProfileExtensionDAO:
+        if "startup_profile_extension" not in self._daos:
+            self._daos["startup_profile_extension"] = StartupProfileExtensionDAO(self.session)
+        return self._daos["startup_profile_extension"]  # type: ignore[return-value]
 
     async def commit(self) -> None:
         await self.session.commit()

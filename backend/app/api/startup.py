@@ -4,6 +4,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from app.model.schema.profile_extension import (
+    StartupProfileExtensionResponse,
+    StartupProfileExtensionUpsert,
+)
 from app.model.schema.startup import StartupCreate, StartupListResponse, StartupResponse
 from app.service.startup_service import StartupService
 
@@ -40,3 +44,33 @@ async def get_startup(
     if startup is None:
         raise HTTPException(status_code=404, detail=f"Startup {startup_id} not found")
     return StartupResponse.model_validate(startup)
+
+
+@router.get("/{startup_id}/profile", response_model=StartupProfileExtensionResponse)
+async def get_startup_profile_extension(
+    startup_id: UUID,
+    service: StartupService = Depends(StartupService),
+) -> StartupProfileExtensionResponse:
+    startup = await service.get(startup_id)
+    if startup is None:
+        raise HTTPException(status_code=404, detail=f"Startup {startup_id} not found")
+    profile = await service.get_profile_extension(startup_id)
+    if profile is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No extended profile for startup {startup_id}",
+        )
+    return StartupProfileExtensionResponse.model_validate(profile)
+
+
+@router.put("/{startup_id}/profile", response_model=StartupProfileExtensionResponse)
+async def upsert_startup_profile_extension(
+    startup_id: UUID,
+    payload: StartupProfileExtensionUpsert,
+    service: StartupService = Depends(StartupService),
+) -> StartupProfileExtensionResponse:
+    startup = await service.get(startup_id)
+    if startup is None:
+        raise HTTPException(status_code=404, detail=f"Startup {startup_id} not found")
+    profile = await service.upsert_profile_extension(startup_id, payload)
+    return StartupProfileExtensionResponse.model_validate(profile)
