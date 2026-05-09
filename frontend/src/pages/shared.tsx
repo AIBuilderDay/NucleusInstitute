@@ -1,5 +1,5 @@
 import type { Person, Startup } from "../types";
-import { NETWORK_LABEL, SECTOR_LABEL, STAGE_LABEL } from "../data";
+import { NETWORK_LABEL, SECTOR_LABEL, STAGE_LABEL } from "../labels";
 import { Avatar, DetailGroup, Pill, Stat } from "../components/ui";
 
 interface FilterRowProps<V extends string> {

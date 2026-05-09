@@ -1,23 +1,31 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   CompareResponse,
   MatchResponse,
   MatchResult,
+  Network,
   Person,
+  RoleCategory,
   Sector,
+  Stage,
   Startup,
 } from "../types";
+import { api, hydrateMatches } from "../api";
 import {
-  PEOPLE,
+  NETWORK_LABEL,
+  NETWORKS,
+  ROLE_CATEGORIES,
+  ROLE_CATEGORY_LABEL,
   SECTORS,
   SECTOR_LABEL,
+  STAGES,
   STAGE_LABEL,
-  STARTUPS,
-  api,
-} from "../data";
+} from "../labels";
 import { Avatar, DimensionBars, Field, ScoreArc, selectStyle } from "../components/ui";
 
 interface MatchPageProps {
+  people: Person[];
+  startups: Startup[];
   initialPerson: Person | null;
   initialStartup: Startup | null;
   currentUser: Person;
@@ -25,21 +33,69 @@ interface MatchPageProps {
 
 type Direction = "person_to_startups" | "startup_to_people";
 
-export function MatchPage({ initialPerson, initialStartup, currentUser }: MatchPageProps) {
+// Intents express *what kind of opportunity* a person is looking for from a
+// startup. They map to fields the backend already returns on Startup, so
+// filtering happens client-side post-match.
+type Intent = "hiring" | "fundraising" | "advisor_seats" | "board_seats" | "needs_services";
+
+const INTENT_LABEL: Record<Intent, string> = {
+  hiring: "Hiring",
+  fundraising: "Fundraising",
+  advisor_seats: "Open advisor seat",
+  board_seats: "Open board seat",
+  needs_services: "Needs services",
+};
+
+const INTENTS: Intent[] = [
+  "hiring",
+  "fundraising",
+  "advisor_seats",
+  "board_seats",
+  "needs_services",
+];
+
+function startupMatchesIntent(s: Startup, intent: Intent): boolean {
+  switch (intent) {
+    case "hiring":
+      return s.roles_needed.length > 0;
+    case "fundraising":
+      return !!s.seeking_investment;
+    case "advisor_seats":
+      // advisor_slots_open is on the backend schema but optional on the type.
+      return ((s as unknown as { advisor_slots_open?: number }).advisor_slots_open ?? 0) > 0;
+    case "board_seats":
+      return ((s as unknown as { board_seats_open?: number }).board_seats_open ?? 0) > 0;
+    case "needs_services":
+      return ((s as unknown as { services_needed?: string[] }).services_needed ?? []).length > 0;
+  }
+}
+
+export function MatchPage({
+  people,
+  startups,
+  initialPerson,
+  initialStartup,
+  currentUser,
+}: MatchPageProps) {
   const [direction, setDirection] = useState<Direction>(
     initialStartup ? "startup_to_people" : "person_to_startups",
   );
   const [personId, setPersonId] = useState<string>(
-    initialPerson?.id ?? currentUser.id ?? PEOPLE[0]!.id,
+    initialPerson?.id ?? currentUser.id ?? people[0]?.id ?? "",
   );
   const [startupId, setStartupId] = useState<string>(
-    initialStartup?.id ?? STARTUPS[0]!.id,
+    initialStartup?.id ?? startups[0]?.id ?? "",
   );
   const [topK, setTopK] = useState(8);
   const [matcher, setMatcher] = useState("");
   const [sectorFilter, setSectorFilter] = useState<Sector[]>([]);
+  const [stageFilter, setStageFilter] = useState<Stage[]>([]);
+  const [intentFilter, setIntentFilter] = useState<Intent[]>([]);
+  const [roleFilter, setRoleFilter] = useState<RoleCategory[]>([]);
+  const [networkFilter, setNetworkFilter] = useState<Network[]>([]);
   const [results, setResults] = useState<MatchResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [compare, setCompare] = useState<CompareResponse | null>(null);
   const [expanded, setExpanded] = useState<number | null>(null);
 
@@ -57,38 +113,98 @@ export function MatchPage({ initialPerson, initialStartup, currentUser }: MatchP
   useEffect(() => {
     let dead = false;
     void (async () => {
+      if (!personId && !startupId) return;
       setLoading(true);
+      setError(null);
       setCompare(null);
-      let r: MatchResponse;
-      if (direction === "person_to_startups") {
-        r = await api.matchPerson(personId, {
-          topK,
-          sectorFilter,
-          matcher: matcher || undefined,
-        });
-      } else {
-        r = await api.matchStartup(startupId, { topK });
-      }
-      if (!dead) {
-        setResults(r);
-        setLoading(false);
+      try {
+        const r =
+          direction === "person_to_startups"
+            ? await api.matchPerson(personId, { topK, matcher: matcher || undefined })
+            : await api.matchStartup(startupId, { topK, matcher: matcher || undefined });
+        if (dead) return;
+        const hydrated: MatchResponse = {
+          ...r,
+          matches: hydrateMatches(r.matches, people, startups),
+        };
+        setResults(hydrated);
+      } catch (e) {
+        if (!dead) setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!dead) setLoading(false);
       }
     })();
     return () => {
       dead = true;
     };
-  }, [direction, personId, startupId, topK, matcher, sectorFilter]);
+  }, [direction, personId, startupId, topK, matcher, people, startups]);
 
-  const me = PEOPLE.find((p) => p.id === personId);
-  const su = STARTUPS.find((s) => s.id === startupId);
+  const me = useMemo(() => people.find((p) => p.id === personId), [people, personId]);
+  const su = useMemo(() => startups.find((s) => s.id === startupId), [startups, startupId]);
+
+  // Apply client-side filters to the already-fetched matches. Backend hard
+  // filters already stripped role-category / availability / comp / location
+  // mismatches; these filters narrow the survivors by *intent* and *category*.
+  const displayedMatches = useMemo<MatchResult[]>(() => {
+    if (!results) return [];
+    return results.matches.filter((m) => {
+      if (direction === "person_to_startups") {
+        const s = m.startup;
+        if (!s) return false;
+        if (sectorFilter.length) {
+          const sectors = [s.sector, ...(s.sectors_secondary ?? [])];
+          if (!sectors.some((x) => sectorFilter.includes(x))) return false;
+        }
+        if (stageFilter.length && !stageFilter.includes(s.stage)) return false;
+        if (intentFilter.length && !intentFilter.some((i) => startupMatchesIntent(s, i)))
+          return false;
+      } else {
+        const p = m.person;
+        if (!p) return false;
+        if (roleFilter.length && !roleFilter.includes(p.role_category)) return false;
+        if (networkFilter.length && !networkFilter.includes(p.primary_network)) return false;
+        if (sectorFilter.length && !p.sectors_of_interest.some((s) => sectorFilter.includes(s)))
+          return false;
+      }
+      return true;
+    });
+  }, [results, direction, sectorFilter, stageFilter, intentFilter, roleFilter, networkFilter]);
 
   const runCompare = async () => {
-    if (direction !== "person_to_startups") return;
+    if (!personId && !startupId) return;
     setLoading(true);
-    const r = await api.compare(personId, { topK });
-    setCompare(r);
-    setLoading(false);
+    setError(null);
+    try {
+      const r =
+        direction === "person_to_startups"
+          ? await api.compare(personId, { topK })
+          : await api.compareStartup(startupId, { topK });
+      const hydrated: CompareResponse = {
+        ...r,
+        by_matcher: Object.fromEntries(
+          Object.entries(r.by_matcher).map(([k, v]) => [k, hydrateMatches(v, people, startups)]),
+        ),
+      };
+      setCompare(hydrated);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
   };
+
+  function toggle<V>(arr: V[], set: (v: V[]) => void, val: V) {
+    set(arr.includes(val) ? arr.filter((x) => x !== val) : [...arr, val]);
+  }
+
+  const isPersonDir = direction === "person_to_startups";
+  const filtersActive =
+    sectorFilter.length +
+      stageFilter.length +
+      intentFilter.length +
+      roleFilter.length +
+      networkFilter.length >
+    0;
 
   return (
     <div>
@@ -124,8 +240,8 @@ export function MatchPage({ initialPerson, initialStartup, currentUser }: MatchP
             }}
           >
             {([
-              { id: "person_to_startups", l: "I'm a person" },
-              { id: "startup_to_people", l: "I'm a startup" },
+              { id: "person_to_startups", l: "Find startups" },
+              { id: "startup_to_people", l: "Find people" },
             ] as const).map((t) => (
               <button
                 key={t.id}
@@ -145,28 +261,28 @@ export function MatchPage({ initialPerson, initialStartup, currentUser }: MatchP
             ))}
           </div>
 
-          {direction === "person_to_startups" ? (
-            <Field label="I am…" hint="Auto-loaded from Browse.">
+          {isPersonDir ? (
+            <Field label="I am…" hint="The talent searching for startups.">
               <select
                 value={personId}
                 onChange={(e) => setPersonId(e.target.value)}
                 style={selectStyle}
               >
-                {PEOPLE.map((p) => (
+                {people.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name} · {p.role_category.replace("_", " ")}
+                    {p.name} · {ROLE_CATEGORY_LABEL[p.role_category]}
                   </option>
                 ))}
               </select>
             </Field>
           ) : (
-            <Field label="The startup is…">
+            <Field label="The startup is…" hint="Whose perspective are we searching from.">
               <select
                 value={startupId}
                 onChange={(e) => setStartupId(e.target.value)}
                 style={selectStyle}
               >
-                {STARTUPS.map((s) => (
+                {startups.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name} · {SECTOR_LABEL[s.sector]}
                   </option>
@@ -175,36 +291,87 @@ export function MatchPage({ initialPerson, initialStartup, currentUser }: MatchP
             </Field>
           )}
 
-          {direction === "person_to_startups" && (
-            <Field label="Looking for sectors" hint="Optional. Empty = all.">
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {SECTORS.map((s) => {
-                  const on = sectorFilter.includes(s);
-                  return (
-                    <button
-                      key={s}
-                      onClick={() =>
-                        setSectorFilter(
-                          on ? sectorFilter.filter((x) => x !== s) : [...sectorFilter, s],
-                        )
-                      }
-                      style={{
-                        padding: "5px 10px",
-                        borderRadius: 999,
-                        fontSize: 11.5,
-                        fontWeight: 500,
-                        border: `1px solid ${on ? "var(--copper)" : "var(--color-border)"}`,
-                        background: on ? "var(--copper-faint)" : "var(--white)",
-                        color: on ? "#8a5e1f" : "var(--charcoal)",
-                      }}
+          {/* — Direction-specific filters — */}
+          {isPersonDir && (
+            <>
+              <Field label="Show startups that are…" hint="Multiple OK. Empty = any opportunity.">
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {INTENTS.map((i) => (
+                    <ToggleChip
+                      key={i}
+                      on={intentFilter.includes(i)}
+                      onClick={() => toggle(intentFilter, setIntentFilter, i)}
+                      tone="copper"
                     >
-                      {SECTOR_LABEL[s]}
-                    </button>
-                  );
-                })}
-              </div>
-            </Field>
+                      {INTENT_LABEL[i]}
+                    </ToggleChip>
+                  ))}
+                </div>
+              </Field>
+              <Field label="Stage" hint="Optional.">
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {STAGES.map((s) => (
+                    <ToggleChip
+                      key={s}
+                      on={stageFilter.includes(s)}
+                      onClick={() => toggle(stageFilter, setStageFilter, s)}
+                    >
+                      {STAGE_LABEL[s]}
+                    </ToggleChip>
+                  ))}
+                </div>
+              </Field>
+            </>
           )}
+
+          {!isPersonDir && (
+            <>
+              <Field label="Looking for…" hint="Filter results by role category.">
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {ROLE_CATEGORIES.map((r) => (
+                    <ToggleChip
+                      key={r}
+                      on={roleFilter.includes(r)}
+                      onClick={() => toggle(roleFilter, setRoleFilter, r)}
+                      tone="copper"
+                    >
+                      {ROLE_CATEGORY_LABEL[r]}
+                    </ToggleChip>
+                  ))}
+                </div>
+              </Field>
+              <Field label="Network" hint="Self-declared Nucleus bucket.">
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {NETWORKS.map((n) => (
+                    <ToggleChip
+                      key={n}
+                      on={networkFilter.includes(n)}
+                      onClick={() => toggle(networkFilter, setNetworkFilter, n)}
+                    >
+                      {NETWORK_LABEL[n].replace(" Network", "").replace(" Advisory", " Advisor")}
+                    </ToggleChip>
+                  ))}
+                </div>
+              </Field>
+            </>
+          )}
+
+          <Field
+            label={isPersonDir ? "Sector" : "Sector interest"}
+            hint="Optional. Empty = all."
+          >
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {SECTORS.map((s) => (
+                <ToggleChip
+                  key={s}
+                  on={sectorFilter.includes(s)}
+                  onClick={() => toggle(sectorFilter, setSectorFilter, s)}
+                >
+                  {SECTOR_LABEL[s]}
+                </ToggleChip>
+              ))}
+            </div>
+          </Field>
 
           <Field label="Top K">
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -230,8 +397,8 @@ export function MatchPage({ initialPerson, initialStartup, currentUser }: MatchP
             >
               <option value="">(default)</option>
               <option value="rule_filter">rule_filter</option>
-              <option value="embedding">embedding (TO-DO)</option>
-              <option value="agentic">agentic (TO-DO)</option>
+              <option value="embedding">embedding</option>
+              <option value="agentic">agentic</option>
             </select>
           </Field>
 
@@ -239,14 +406,26 @@ export function MatchPage({ initialPerson, initialStartup, currentUser }: MatchP
             <button className="btn btn-primary" style={{ flex: 1 }}>
               Find matches
             </button>
-            <button
-              className="btn btn-ghost"
-              onClick={runCompare}
-              disabled={direction !== "person_to_startups"}
-            >
+            <button className="btn btn-ghost" onClick={runCompare}>
               Compare matchers
             </button>
           </div>
+
+          {filtersActive && (
+            <button
+              className="btn btn-ghost"
+              style={{ marginTop: 10, width: "100%", fontSize: 12 }}
+              onClick={() => {
+                setSectorFilter([]);
+                setStageFilter([]);
+                setIntentFilter([]);
+                setRoleFilter([]);
+                setNetworkFilter([]);
+              }}
+            >
+              Clear filters
+            </button>
+          )}
 
           <div
             style={{
@@ -258,7 +437,7 @@ export function MatchPage({ initialPerson, initialStartup, currentUser }: MatchP
             }}
           >
             <div className="tiny-caps">Querying for</div>
-            {direction === "person_to_startups" && me && (
+            {isPersonDir && me && (
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
                 <Avatar name={me.name} size={36} />
                 <div style={{ minWidth: 0 }}>
@@ -277,7 +456,7 @@ export function MatchPage({ initialPerson, initialStartup, currentUser }: MatchP
                 </div>
               </div>
             )}
-            {direction === "startup_to_people" && su && (
+            {!isPersonDir && su && (
               <div style={{ marginTop: 8 }}>
                 <div className="display" style={{ fontSize: 18, color: "var(--nucleus-blue)" }}>
                   {su.name}
@@ -289,9 +468,24 @@ export function MatchPage({ initialPerson, initialStartup, currentUser }: MatchP
         </aside>
 
         <main>
+          {error && (
+            <div
+              style={{
+                padding: "14px 18px",
+                borderRadius: 8,
+                background: "#fbe8e0",
+                color: "#8a3a3a",
+                fontSize: 13,
+                marginBottom: 14,
+              }}
+            >
+              ⚠ Match request failed: {error}
+            </div>
+          )}
+
           {loading && !results && <ResultSkeleton />}
 
-          {compare && <CompareResults compare={compare} />}
+          {compare && <CompareResults compare={compare} direction={direction} />}
 
           {!compare && results && (
             <>
@@ -309,7 +503,8 @@ export function MatchPage({ initialPerson, initialStartup, currentUser }: MatchP
                   className="display"
                   style={{ fontSize: 26, color: "var(--nucleus-blue)", margin: 0 }}
                 >
-                  {results.matches.length} ranked matches
+                  {displayedMatches.length}{" "}
+                  {filtersActive ? `of ${results.matches.length} ` : ""}ranked matches
                 </h2>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <span className="tiny-caps">Source</span>
@@ -319,19 +514,25 @@ export function MatchPage({ initialPerson, initialStartup, currentUser }: MatchP
                       fontSize: 11,
                       padding: "3px 8px",
                       borderRadius: 999,
-                      background:
-                        results.source === "live"
-                          ? "var(--copper-faint)"
-                          : "var(--whisper-200)",
-                      color: results.source === "live" ? "#8a5e1f" : "var(--slate)",
+                      background: "var(--copper-faint)",
+                      color: "#8a5e1f",
                     }}
                   >
-                    {results.source === "live" ? "LIVE BACKEND" : "MOCK"}
+                    LIVE BACKEND
                   </span>
                 </div>
               </div>
 
-              {results.matches.map((m, i) => (
+              {displayedMatches.length === 0 && (
+                <div
+                  className="card"
+                  style={{ padding: 24, color: "var(--slate)", fontSize: 13.5 }}
+                >
+                  No matches passed the active filters. Try clearing one or two of them.
+                </div>
+              )}
+
+              {displayedMatches.map((m, i) => (
                 <MatchCard
                   key={`${m.talent_id}-${m.startup_id}-${i}`}
                   match={m}
@@ -349,6 +550,35 @@ export function MatchPage({ initialPerson, initialStartup, currentUser }: MatchP
   );
 }
 
+interface ToggleChipProps {
+  on: boolean;
+  onClick: () => void;
+  tone?: "blue" | "copper";
+  children: React.ReactNode;
+}
+
+function ToggleChip({ on, onClick, tone = "blue", children }: ToggleChipProps) {
+  const onColor = tone === "copper" ? "var(--copper)" : "var(--nucleus-blue)";
+  const onBg = tone === "copper" ? "var(--copper-faint)" : "var(--blue-100)";
+  const onText = tone === "copper" ? "#8a5e1f" : "var(--nucleus-blue)";
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: "5px 10px",
+        borderRadius: 999,
+        fontSize: 11.5,
+        fontWeight: 500,
+        border: `1px solid ${on ? onColor : "var(--color-border)"}`,
+        background: on ? onBg : "var(--white)",
+        color: on ? onText : "var(--charcoal)",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 interface MatchCardProps {
   match: MatchResult;
   index: number;
@@ -359,9 +589,7 @@ interface MatchCardProps {
 
 function MatchCard({ match, index, direction, expanded, onToggle }: MatchCardProps) {
   const isStartup = direction === "person_to_startups";
-  const target: Person | Startup | undefined = isStartup
-    ? match.startup ?? STARTUPS.find((s) => s.id === match.startup_id)
-    : match.person ?? PEOPLE.find((p) => p.id === match.talent_id);
+  const target: Person | Startup | undefined = isStartup ? match.startup : match.person;
   if (!target) return null;
   const blocked = !match.passed_hard_filters;
 
@@ -406,7 +634,7 @@ function MatchCard({ match, index, direction, expanded, onToggle }: MatchCardPro
               ·{" "}
               {isStartup
                 ? `${SECTOR_LABEL[(target as Startup).sector]} · ${STAGE_LABEL[(target as Startup).stage]} · ${target.location_city}`
-                : (target as Person).headline}
+                : `${ROLE_CATEGORY_LABEL[(target as Person).role_category]} · ${(target as Person).headline}`}
             </span>
           </div>
           {!isStartup && (
@@ -479,8 +707,15 @@ function MatchCard({ match, index, direction, expanded, onToggle }: MatchCardPro
   );
 }
 
-function CompareResults({ compare }: { compare: CompareResponse }) {
-  const matchers = Object.keys(compare.by_matcher) as Array<keyof typeof compare.by_matcher>;
+function CompareResults({
+  compare,
+  direction,
+}: {
+  compare: CompareResponse;
+  direction: Direction;
+}) {
+  const matchers = Object.keys(compare.by_matcher);
+  const isStartup = direction === "person_to_startups";
   return (
     <div>
       <h2
@@ -490,13 +725,13 @@ function CompareResults({ compare }: { compare: CompareResponse }) {
         Side-by-side
       </h2>
       <p style={{ color: "var(--slate)", fontSize: 13.5, marginTop: 0, marginBottom: 18 }}>
-        Same talent. Three matchers. Compare top picks across rule-based, embedding, and agentic
-        providers.
+        Same query. Every registered matcher. Compare top picks across rule-based, embedding,
+        and agentic providers.
       </p>
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: `repeat(${matchers.length}, 1fr)`,
+          gridTemplateColumns: `repeat(${Math.max(1, matchers.length)}, 1fr)`,
           gap: 14,
         }}
       >
@@ -514,12 +749,12 @@ function CompareResults({ compare }: { compare: CompareResponse }) {
                 {m}
               </span>
               <span className="mono" style={{ fontSize: 10, color: "var(--slate-light)" }}>
-                top {compare.by_matcher[m].length}
+                top {compare.by_matcher[m]?.length ?? 0}
               </span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {compare.by_matcher[m].slice(0, 6).map((mm, i) => {
-                const t = mm.startup ?? STARTUPS.find((s) => s.id === mm.startup_id);
+              {(compare.by_matcher[m] ?? []).slice(0, 6).map((mm, i) => {
+                const t = isStartup ? mm.startup : mm.person;
                 if (!t) return null;
                 return (
                   <div

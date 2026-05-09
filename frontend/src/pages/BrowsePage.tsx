@@ -1,18 +1,29 @@
 import { useMemo, useState } from "react";
-import type { Network, Person, Sector, Stage, Startup } from "../types";
+import type {
+  Network,
+  Person,
+  RoleCategory,
+  Sector,
+  Stage,
+  Startup,
+} from "../types";
 import {
   NETWORK_LABEL,
-  PEOPLE,
+  NETWORKS,
+  ROLE_CATEGORIES,
+  ROLE_CATEGORY_LABEL,
   SECTORS,
   SECTOR_LABEL,
+  STAGES,
   STAGE_LABEL,
-  STARTUPS,
-} from "../data";
+} from "../labels";
 import { Sidesheet } from "../components/ui";
 import { SwipeDeck } from "../components/SwipeDeck";
 import { FilterRow, PersonDetailBody, StartupDetailBody } from "./shared";
 
 interface BrowsePageProps {
+  people: Person[];
+  startups: Startup[];
   onMatchPerson: (p: Person) => void;
   onMatchStartup: (s: Startup) => void;
 }
@@ -23,29 +34,35 @@ type Detail =
   | { kind: "startup"; item: Startup }
   | null;
 
-export function BrowsePage({ onMatchPerson, onMatchStartup }: BrowsePageProps) {
+export function BrowsePage({ people, startups, onMatchPerson, onMatchStartup }: BrowsePageProps) {
   const [tab, setTab] = useState<Tab>("people");
   const [sectorFilter, setSectorFilter] = useState<Sector[]>([]);
   const [networkFilter, setNetworkFilter] = useState<Network[]>([]);
+  const [roleFilter, setRoleFilter] = useState<RoleCategory[]>([]);
   const [stageFilter, setStageFilter] = useState<Stage[]>([]);
+  const [openToFilter, setOpenToFilter] = useState<RoleCategory[]>([]);
   const [query, setQuery] = useState("");
   const [detail, setDetail] = useState<Detail>(null);
 
-  const people = useMemo(() => {
+  const filteredPeople = useMemo(() => {
     const q = query.toLowerCase();
-    return PEOPLE.filter((p) => {
+    return people.filter((p) => {
       if (sectorFilter.length && !p.sectors_of_interest.some((s) => sectorFilter.includes(s)))
         return false;
       if (networkFilter.length && !networkFilter.includes(p.primary_network)) return false;
-      if (q && !(p.name + " " + p.headline + " " + p.skills.join(" ")).toLowerCase().includes(q))
+      if (roleFilter.length && !roleFilter.includes(p.role_category)) return false;
+      if (
+        q &&
+        !(p.name + " " + p.headline + " " + (p.skills ?? []).join(" ")).toLowerCase().includes(q)
+      )
         return false;
       return true;
     });
-  }, [sectorFilter, networkFilter, query]);
+  }, [people, sectorFilter, networkFilter, roleFilter, query]);
 
-  const startups = useMemo(() => {
+  const filteredStartups = useMemo(() => {
     const q = query.toLowerCase();
-    return STARTUPS.filter((s) => {
+    return startups.filter((s) => {
       if (
         sectorFilter.length &&
         !sectorFilter.includes(s.sector) &&
@@ -53,10 +70,15 @@ export function BrowsePage({ onMatchPerson, onMatchStartup }: BrowsePageProps) {
       )
         return false;
       if (stageFilter.length && !stageFilter.includes(s.stage)) return false;
+      if (
+        openToFilter.length &&
+        !s.role_categories_open_to.some((r) => openToFilter.includes(r))
+      )
+        return false;
       if (q && !(s.name + " " + s.one_liner).toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [sectorFilter, stageFilter, query]);
+  }, [startups, sectorFilter, stageFilter, openToFilter, query]);
 
   function toggle<V>(arr: V[], set: (v: V[]) => void, val: V) {
     set(arr.includes(val) ? arr.filter((x) => x !== val) : [...arr, val]);
@@ -96,7 +118,9 @@ export function BrowsePage({ onMatchPerson, onMatchStartup }: BrowsePageProps) {
                   boxShadow: tab === t ? "0 1px 2px rgba(15,44,79,0.08)" : "none",
                 }}
               >
-                {t === "people" ? `People · ${people.length}` : `Startups · ${startups.length}`}
+                {t === "people"
+                  ? `People · ${filteredPeople.length}`
+                  : `Startups · ${filteredStartups.length}`}
               </button>
             ))}
           </div>
@@ -129,7 +153,9 @@ export function BrowsePage({ onMatchPerson, onMatchStartup }: BrowsePageProps) {
               onClick={() => {
                 setSectorFilter([]);
                 setNetworkFilter([]);
+                setRoleFilter([]);
                 setStageFilter([]);
+                setOpenToFilter([]);
                 setQuery("");
               }}
             >
@@ -146,28 +172,42 @@ export function BrowsePage({ onMatchPerson, onMatchStartup }: BrowsePageProps) {
             onToggle={(v) => toggle(sectorFilter, setSectorFilter, v)}
           />
           {tab === "people" && (
-            <FilterRow<Network>
-              label="Network"
-              options={
-                Object.entries(NETWORK_LABEL) as Array<[Network, string]>
-              }
-              selected={networkFilter}
-              onToggle={(v) => toggle(networkFilter, setNetworkFilter, v)}
-            />
+            <>
+              <FilterRow<RoleCategory>
+                label="Role"
+                options={ROLE_CATEGORIES.map((r) => [r, ROLE_CATEGORY_LABEL[r]] as const)}
+                selected={roleFilter}
+                onToggle={(v) => toggle(roleFilter, setRoleFilter, v)}
+              />
+              <FilterRow<Network>
+                label="Network"
+                options={NETWORKS.map((n) => [n, NETWORK_LABEL[n]] as const)}
+                selected={networkFilter}
+                onToggle={(v) => toggle(networkFilter, setNetworkFilter, v)}
+              />
+            </>
           )}
           {tab === "startups" && (
-            <FilterRow<Stage>
-              label="Stage"
-              options={Object.entries(STAGE_LABEL) as Array<[Stage, string]>}
-              selected={stageFilter}
-              onToggle={(v) => toggle(stageFilter, setStageFilter, v)}
-            />
+            <>
+              <FilterRow<Stage>
+                label="Stage"
+                options={STAGES.map((s) => [s, STAGE_LABEL[s]] as const)}
+                selected={stageFilter}
+                onToggle={(v) => toggle(stageFilter, setStageFilter, v)}
+              />
+              <FilterRow<RoleCategory>
+                label="Open to"
+                options={ROLE_CATEGORIES.map((r) => [r, ROLE_CATEGORY_LABEL[r]] as const)}
+                selected={openToFilter}
+                onToggle={(v) => toggle(openToFilter, setOpenToFilter, v)}
+              />
+            </>
           )}
         </div>
 
         {tab === "people" ? (
           <SwipeDeck
-            items={people}
+            items={filteredPeople}
             kind="person"
             onView={(p) => setDetail({ kind: "person", item: p as Person })}
             onConnect={(p) => onMatchPerson(p as Person)}
@@ -176,7 +216,7 @@ export function BrowsePage({ onMatchPerson, onMatchStartup }: BrowsePageProps) {
           />
         ) : (
           <SwipeDeck
-            items={startups}
+            items={filteredStartups}
             kind="startup"
             onView={(s) => setDetail({ kind: "startup", item: s as Startup })}
             onConnect={(s) => onMatchStartup(s as Startup)}
@@ -190,7 +230,11 @@ export function BrowsePage({ onMatchPerson, onMatchStartup }: BrowsePageProps) {
         open={!!detail && detail.kind === "person"}
         onClose={() => setDetail(null)}
         title={detail?.kind === "person" ? detail.item.name : ""}
-        subtitle="Profile · Operator Network"
+        subtitle={
+          detail?.kind === "person"
+            ? `${ROLE_CATEGORY_LABEL[detail.item.role_category]} · ${NETWORK_LABEL[detail.item.primary_network]}`
+            : ""
+        }
         accent="blue"
       >
         {detail?.kind === "person" && (

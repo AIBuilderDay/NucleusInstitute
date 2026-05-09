@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Person, Startup } from "../types";
-import { NETWORK_LABEL, SECTOR_LABEL, STAGE_LABEL } from "../data";
+import { NETWORK_LABEL, SECTOR_LABEL, STAGE_LABEL } from "../labels";
 
 // Deterministic gradient/pattern tied to id, so each profile feels different.
 function cardArt(seed = ""): [string, string, string] {

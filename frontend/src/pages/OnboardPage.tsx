@@ -8,7 +8,19 @@ import type {
   RoleCategory,
   Sector,
 } from "../types";
-import { NETWORK_LABEL, PEOPLE, SECTORS, SECTOR_LABEL } from "../data";
+import {
+  AVAILABILITIES,
+  AVAILABILITY_LABEL,
+  COMP_EXPECTATIONS,
+  COMP_EXPECTATION_LABEL,
+  NETWORK_LABEL,
+  NETWORKS,
+  ROLE_CATEGORIES,
+  ROLE_CATEGORY_LABEL,
+  SECTORS,
+  SECTOR_LABEL,
+} from "../labels";
+import { api } from "../api";
 import { Field, selectStyle } from "../components/ui";
 
 interface OnboardPageProps {
@@ -17,6 +29,7 @@ interface OnboardPageProps {
 
 interface Draft {
   name: string;
+  email: string;
   headline: string;
   role_category: RoleCategory;
   availability: Availability;
@@ -25,107 +38,85 @@ interface Draft {
   skills: string[];
   mission_keywords: string[];
   location_city: string;
-  role_titles_seeking: string[];
   comp_expectation_type: CompExpectation;
   comp_min_salary_usd: number;
   risk_tolerance: RiskTolerance;
   bio: string;
 }
 
-const ROLE_CATEGORIES: RoleCategory[] = [
-  "executive",
-  "operator",
-  "student",
-  "intern",
-  "board_member",
-  "advisor",
-  "mentor",
-  "investor",
-  "service_provider",
-];
-
-const AVAILABILITIES: Availability[] = [
-  "full_time",
-  "part_time",
-  "fractional",
-  "advisory",
-  "internship",
-];
+const DEFAULT_DRAFT: Draft = {
+  name: "",
+  email: "",
+  headline: "",
+  role_category: "executive",
+  availability: "full_time",
+  primary_network: "operator",
+  sectors_of_interest: [],
+  skills: [],
+  mission_keywords: [],
+  location_city: "Salt Lake City",
+  comp_expectation_type: "salary_plus_equity",
+  comp_min_salary_usd: 150000,
+  risk_tolerance: "medium",
+  bio: "",
+};
 
 export function OnboardPage({ onComplete }: OnboardPageProps) {
   const [step, setStep] = useState(0);
   const [linkedin, setLinkedin] = useState("");
   const [scraping, setScraping] = useState(false);
-  const [draft, setDraft] = useState<Draft>({
-    name: "",
-    headline: "",
-    role_category: "executive",
-    availability: "full_time",
-    primary_network: "operator",
-    sectors_of_interest: [],
-    skills: [],
-    mission_keywords: [],
-    location_city: "Salt Lake City",
-    role_titles_seeking: [],
-    comp_expectation_type: "salary_plus_equity",
-    comp_min_salary_usd: 150000,
-    risk_tolerance: "medium",
-    bio: "",
-  });
+  const [draft, setDraft] = useState<Draft>(DEFAULT_DRAFT);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const fakeScrape = () => {
+    // Real scrape would hit the backend; for now we just unlock the form.
     setScraping(true);
     setTimeout(() => {
-      const sample = PEOPLE[Math.floor(Math.random() * Math.min(6, PEOPLE.length))];
-      if (!sample) {
-        setScraping(false);
-        return;
-      }
-      setDraft({
-        ...draft,
-        name: sample.name,
-        headline: sample.headline,
-        role_category: sample.role_category,
-        availability: sample.availability,
-        primary_network: sample.primary_network,
-        sectors_of_interest: sample.sectors_of_interest,
-        skills: sample.skills,
-        mission_keywords: sample.mission_keywords ?? [],
-        location_city: sample.location_city,
-        role_titles_seeking: sample.role_titles_seeking,
-        comp_expectation_type: sample.comp_expectation_type,
-        comp_min_salary_usd: sample.comp_min_salary_usd ?? 150000,
-        risk_tolerance: sample.risk_tolerance ?? "medium",
-        bio: sample.bio ?? "",
-      });
       setScraping(false);
       setStep(1);
-    }, 1400);
+    }, 900);
   };
 
-  const finish = () => {
-    const profile: Person = {
-      id: "p-you",
-      name: draft.name,
-      headline: draft.headline,
-      role_category: draft.role_category,
-      availability: draft.availability,
-      years_experience: 0,
-      sectors_of_interest: draft.sectors_of_interest,
-      stage_preference: ["seed", "series_a"],
-      role_titles_seeking: ["other"],
-      skills: draft.skills,
-      comp_expectation_type: draft.comp_expectation_type,
-      comp_min_salary_usd: draft.comp_min_salary_usd,
-      location_city: draft.location_city,
-      remote_ok: true,
-      primary_network: draft.primary_network,
-      mission_keywords: draft.mission_keywords,
-      risk_tolerance: draft.risk_tolerance,
-      bio: draft.bio,
-      trust_badges: ["Self-verified"],
-    };
-    onComplete(profile);
+  const finish = async () => {
+    setSubmitError(null);
+    if (!draft.email.trim()) {
+      setSubmitError("Email is required.");
+      return;
+    }
+    if (!draft.name.trim()) {
+      setSubmitError("Name is required.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const created = await api.createPerson({
+        name: draft.name,
+        email: draft.email,
+        headline: draft.headline,
+        role_category: draft.role_category,
+        availability: draft.availability,
+        years_experience: 0,
+        sectors_of_interest: draft.sectors_of_interest,
+        stage_preference: ["seed", "series_a"],
+        role_titles_seeking: ["other"],
+        skills: draft.skills,
+        comp_expectation_type: draft.comp_expectation_type,
+        comp_min_salary_usd: draft.comp_min_salary_usd,
+        location_city: draft.location_city,
+        remote_ok: true,
+        primary_network: draft.primary_network,
+        mission_keywords: draft.mission_keywords,
+        risk_tolerance: draft.risk_tolerance,
+        bio: draft.bio,
+        trust_badges: ["Self-verified"],
+      });
+      onComplete(created);
+    } catch (e) {
+      setSubmitError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -226,6 +217,8 @@ export function OnboardPage({ onComplete }: OnboardPageProps) {
             setDraft={setDraft}
             onBack={() => setStep(1)}
             onFinish={finish}
+            submitting={submitting}
+            error={submitError}
           />
         )}
       </div>
@@ -272,15 +265,14 @@ function ScrapeProgress() {
   );
 }
 
-interface StepProps {
+interface ConfirmStepProps {
   draft: Draft;
   setDraft: (d: Draft) => void;
   onBack: () => void;
-  onNext?: () => void;
-  onFinish?: () => void;
+  onNext: () => void;
 }
 
-function ConfirmProfileStep({ draft, setDraft, onBack, onNext }: StepProps) {
+function ConfirmProfileStep({ draft, setDraft, onBack, onNext }: ConfirmStepProps) {
   const upd = <K extends keyof Draft>(k: K, v: Draft[K]) => setDraft({ ...draft, [k]: v });
   const togSector = (v: Sector) => {
     const arr = draft.sectors_of_interest;
@@ -309,6 +301,14 @@ function ConfirmProfileStep({ draft, setDraft, onBack, onNext }: StepProps) {
             onChange={(e) => upd("name", e.target.value)}
           />
         </Field>
+        <Field label="Email">
+          <input
+            type="email"
+            style={selectStyle}
+            value={draft.email}
+            onChange={(e) => upd("email", e.target.value)}
+          />
+        </Field>
         <Field label="Location">
           <input
             style={selectStyle}
@@ -323,20 +323,20 @@ function ConfirmProfileStep({ draft, setDraft, onBack, onNext }: StepProps) {
             onChange={(e) => upd("headline", e.target.value)}
           />
         </Field>
-        <Field label="Primary network">
+        <Field label="Primary network" hint="Self-declared bucket; matches the Nucleus form.">
           <select
             style={selectStyle}
             value={draft.primary_network}
             onChange={(e) => upd("primary_network", e.target.value as Network)}
           >
-            {(Object.entries(NETWORK_LABEL) as Array<[Network, string]>).map(([k, l]) => (
-              <option key={k} value={k}>
-                {l}
+            {NETWORKS.map((n) => (
+              <option key={n} value={n}>
+                {NETWORK_LABEL[n]}
               </option>
             ))}
           </select>
         </Field>
-        <Field label="Role category">
+        <Field label="Role category" hint="Drives which match weights apply.">
           <select
             style={selectStyle}
             value={draft.role_category}
@@ -344,7 +344,7 @@ function ConfirmProfileStep({ draft, setDraft, onBack, onNext }: StepProps) {
           >
             {ROLE_CATEGORIES.map((r) => (
               <option key={r} value={r}>
-                {r.replace("_", " ")}
+                {ROLE_CATEGORY_LABEL[r]}
               </option>
             ))}
           </select>
@@ -357,7 +357,7 @@ function ConfirmProfileStep({ draft, setDraft, onBack, onNext }: StepProps) {
           >
             {AVAILABILITIES.map((r) => (
               <option key={r} value={r}>
-                {r.replace("_", " ")}
+                {AVAILABILITY_LABEL[r]}
               </option>
             ))}
           </select>
@@ -427,7 +427,16 @@ function ConfirmProfileStep({ draft, setDraft, onBack, onNext }: StepProps) {
   );
 }
 
-function PreferencesStep({ draft, setDraft, onBack, onFinish }: StepProps) {
+interface PrefStepProps {
+  draft: Draft;
+  setDraft: (d: Draft) => void;
+  onBack: () => void;
+  onFinish: () => void;
+  submitting: boolean;
+  error: string | null;
+}
+
+function PreferencesStep({ draft, setDraft, onBack, onFinish, submitting, error }: PrefStepProps) {
   const upd = <K extends keyof Draft>(k: K, v: Draft[K]) => setDraft({ ...draft, [k]: v });
   return (
     <div className="card" style={{ padding: 28 }}>
@@ -447,9 +456,9 @@ function PreferencesStep({ draft, setDraft, onBack, onFinish }: StepProps) {
             value={draft.comp_expectation_type}
             onChange={(e) => upd("comp_expectation_type", e.target.value as CompExpectation)}
           >
-            {(["salary", "equity", "salary_plus_equity", "free"] as const).map((r) => (
+            {COMP_EXPECTATIONS.map((r) => (
               <option key={r} value={r}>
-                {r.replace(/_/g, " ")}
+                {COMP_EXPECTATION_LABEL[r]}
               </option>
             ))}
           </select>
@@ -492,13 +501,28 @@ function PreferencesStep({ draft, setDraft, onBack, onFinish }: StepProps) {
         </Field>
       </div>
 
+      {error && (
+        <div
+          style={{
+            marginTop: 14,
+            padding: "10px 14px",
+            background: "#fbe8e0",
+            borderRadius: 8,
+            color: "#8a3a3a",
+            fontSize: 13,
+          }}
+        >
+          ⚠ {error}
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
-        <button className="btn btn-ghost" onClick={onBack}>
+        <button className="btn btn-ghost" onClick={onBack} disabled={submitting}>
           ← Back
         </button>
         <div style={{ flex: 1 }} />
-        <button className="btn btn-copper" onClick={onFinish}>
-          Publish & view matches →
+        <button className="btn btn-copper" onClick={onFinish} disabled={submitting}>
+          {submitting ? "Publishing…" : "Publish & view matches →"}
         </button>
       </div>
     </div>
