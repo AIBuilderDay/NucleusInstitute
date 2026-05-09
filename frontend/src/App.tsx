@@ -8,14 +8,33 @@ import { BrowsePage } from "./pages/BrowsePage";
 import { MatchPage } from "./pages/MatchPage";
 import { MyProfilePage } from "./pages/MyProfilePage";
 import { OnboardPage } from "./pages/OnboardPage";
+import { EcosystemPage } from "./ecosystem/EcosystemPage";
 
 interface MatchSeed {
   person: Person | null;
   startup: Startup | null;
 }
 
+function pickInitialRoute(): Route {
+  // If the browser landed here from a LinkedIn / Google OAuth callback, the
+  // URL carries a handoff token. The Ecosystem page is the surface that
+  // consumes it (auto-personalizes the matches), so route there on mount
+  // regardless of which path the backend redirected to.
+  if (typeof window !== "undefined") {
+    const sp = new URL(window.location.href).searchParams;
+    if (
+      sp.get("linkedin_handoff") ||
+      sp.get("google_handoff") ||
+      sp.get("demo_signin")
+    ) {
+      return "ecosystem";
+    }
+  }
+  return "browse";
+}
+
 export function App() {
-  const [route, setRoute] = useState<Route>("browse");
+  const [route, setRoute] = useState<Route>(pickInitialRoute);
   const [people, setPeople] = useState<Person[]>([]);
   const [startups, setStartups] = useState<Startup[]>([]);
   const [currentUser, setCurrentUser] = useState<Person | null>(null);
@@ -71,7 +90,7 @@ export function App() {
 
   return (
     <div>
-      <HeroStrip dense {...HERO} />
+      {route !== "ecosystem" && <HeroStrip dense {...HERO} />}
       <TopNav route={route} setRoute={setRoute} />
 
       {loadError && (
@@ -139,6 +158,7 @@ export function App() {
               }}
             />
           )}
+          {route === "ecosystem" && <EcosystemPage />}
         </>
       )}
 

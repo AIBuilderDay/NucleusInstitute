@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from app.model.schema.auth import OnboardAgentRequest, OnboardAgentResponse
+from app.model.schema.auth import (
+    InferInterestsRequest,
+    InferInterestsResponse,
+    OnboardAgentRequest,
+    OnboardAgentResponse,
+)
 from app.model.schema.talent import TalentResponse
 from app.service.onboard_service import OnboardService
 
@@ -43,3 +48,16 @@ async def onboard_agent(
         reasoning_bullets=run.reasoning_bullets,
         agent_raw_response=run.agent_raw_response,
     )
+
+
+@router.post("/infer-interests", response_model=InferInterestsResponse)
+async def infer_interests(
+    payload: InferInterestsRequest,
+    service: OnboardService = Depends(OnboardService),
+) -> InferInterestsResponse:
+    """Read-only Claude call after sign-in: infer the user's interests from
+    their public footprint via web_search, return categories the frontend
+    pre-fills into the 'Is this you?' confirmation modal. Does NOT create a
+    Talent row — pure inference, disposable.
+    """
+    return await service.infer_interests(userinfo=payload.linkedin_userinfo)
