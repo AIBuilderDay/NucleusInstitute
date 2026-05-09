@@ -27,16 +27,47 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.dao.daos.follow_dao import StartupFollowDAO, TalentFollowDAO
 from app.model.database.startup import Startup
+from app.model.database.startup_profile_extension import StartupProfileExtension
 from app.model.database.talent import Talent
+from app.model.database.talent_profile_extension import TalentProfileExtension
 from app.model.schema.startup import StartupCreate
 from app.model.schema.talent import TalentCreate
-from app.seed.generator import build_follow_edges, build_synthetic_batch
+from app.seed.generator import (
+    build_follow_edges,
+    build_startup_extension,
+    build_synthetic_batch,
+    build_talent_extension,
+)
 
 logger = settings.logger
 
 # data/seed/nucleus_seed.json sits at <backend>/data/seed/nucleus_seed.json.
 # This module is at <backend>/app/seed/utah_synthetic.py, so go up two levels.
 SEED_PATH = Path(__file__).resolve().parents[2] / "data" / "seed" / "nucleus_seed.json"
+
+
+_TALENT_EXT_FIELDS = (
+    "id", "name", "email", "linkedin_url", "headline", "role_category",
+    "role_titles_seeking", "skills", "sectors_of_interest", "prior_companies",
+    "prior_titles", "prior_exits", "years_experience", "university_affiliations",
+    "mission_keywords", "bio", "location_city", "location_metro",
+    "service_provider_profile",
+)
+_STARTUP_EXT_FIELDS = (
+    "id", "name", "website", "one_liner", "description", "sector",
+    "sectors_secondary", "stage", "funding_status", "total_raised_usd",
+    "team_size", "founded_year", "origin", "roles_needed", "recent_grants",
+    "accelerator_affiliations", "mission_keywords", "location_city",
+    "location_metro", "seeking_investment", "target_raise_usd", "seeking_lead",
+)
+
+
+def _talent_to_dict(t: Talent) -> dict[str, Any]:
+    return {f: getattr(t, f, None) for f in _TALENT_EXT_FIELDS}
+
+
+def _startup_to_dict(s: Startup) -> dict[str, Any]:
+    return {f: getattr(s, f, None) for f in _STARTUP_EXT_FIELDS}
 
 
 def _load_seed_file() -> dict[str, list[dict[str, Any]]]:
@@ -61,7 +92,14 @@ async def seed_if_empty(session: AsyncSession) -> dict[str, int] | None:
 
     Returns counts on success, None if everything was already populated.
     """
-    inserted = {"talents": 0, "startups": 0, "talent_follows": 0, "startup_follows": 0}
+    inserted = {
+        "talents": 0,
+        "startups": 0,
+        "talent_follows": 0,
+        "startup_follows": 0,
+        "talent_extensions": 0,
+        "startup_extensions": 0,
+    }
     talent_follow_dao = TalentFollowDAO(session)
     startup_follow_dao = StartupFollowDAO(session)
 
@@ -109,6 +147,32 @@ async def seed_if_empty(session: AsyncSession) -> dict[str, int] | None:
         )
         persisted_startups = list(
             (await session.execute(select(Startup))).scalars().all()
+        )
+
+    # Seed extended-profile rows if those tables are empty. Independent pass so
+    # a DB seeded before this feature existed picks them up on the next boot.
+    talent_ext_present = (
+        await session.execute(select(TalentProfileExtension).limit(1))
+    ).scalar_one_or_none() is not None
+    startup_ext_present = (
+        await session.execute(select(StartupProfileExtension).limit(1))
+    ).scalar_one_or_none() is not None
+
+    if not talent_ext_present and persisted_talents:
+        for t in persisted_talents:
+            kwargs = build_talent_extension(_talent_to_dict(t))
+            session.add(TalentProfileExtension(talent_id=t.id, **kwargs))
+            inserted["talent_extensions"] += 1
+    if not startup_ext_present and persisted_startups:
+        for s in persisted_startups:
+            kwargs = build_startup_extension(_startup_to_dict(s))
+            session.add(StartupProfileExtension(startup_id=s.id, **kwargs))
+            inserted["startup_extensions"] += 1
+    if inserted["talent_extensions"] or inserted["startup_extensions"]:
+        await session.commit()
+        logger.info(
+            f"Seeded profile extensions: {inserted['talent_extensions']} talent, "
+            f"{inserted['startup_extensions']} startup"
         )
 
     # Seed follow graph if the tables are empty. Independent of whether we

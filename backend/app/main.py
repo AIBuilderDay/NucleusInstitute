@@ -51,7 +51,12 @@ async def lifespan(app: FastAPI):
         async with session_factory() as session:
             inserted = await seed_if_empty(session)
             if inserted:
-                logger.info(f"Seeded {inserted['talents']} talents and {inserted['startups']} startups")
+                logger.info(
+                    f"Seeded {inserted['talents']} talents, {inserted['startups']} startups, "
+                    f"{inserted['talent_extensions']} talent ext, "
+                    f"{inserted['startup_extensions']} startup ext, "
+                    f"{inserted['talent_follows']}+{inserted['startup_follows']} follows"
+                )
             else:
                 logger.info("Seed skipped — DB already has rows")
 
