@@ -29,6 +29,7 @@ class StartupBase(BaseModel):
     # identity
     name: str
     website: str | None = None
+    email: str | None = None
     logo_url: str | None = None
     one_liner: str = ""
     description: str = ""

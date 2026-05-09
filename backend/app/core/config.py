@@ -105,6 +105,15 @@ class Settings(BaseSettings):
     frontend_onboard_url: str = "http://localhost:5173/onboard"
 
     # -------------------------------------------------------------------------
+    # Resend — outbound email for the in-app outreach button. Get a key from
+    # https://resend.com/api-keys. The FROM domain must be verified in Resend
+    # for production; for dev, Resend's onboarding domain works without setup.
+    # -------------------------------------------------------------------------
+    resend_api_key: str | None = None
+    email_from_address: str = "Nucleus Institute <onboarding@resend.dev>"
+    email_reply_to_default: str | None = None
+
+    # -------------------------------------------------------------------------
     # Sentry (optional — wire later, all fields tolerate absence).
     # -------------------------------------------------------------------------
     sentry_dsn: str | None = None

@@ -12,6 +12,7 @@ Router prefixes (all under /api/v1):
 - /discover
 - /auth
 - /onboard
+- /email
 """
 
 from contextlib import asynccontextmanager
@@ -21,6 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
 from app.api.discovery import router as discovery_router
+from app.api.email import router as email_router
 from app.api.health import router as health_router
 from app.api.match import router as match_router
 from app.api.onboard import router as onboard_router
@@ -90,3 +92,4 @@ app.include_router(match_router, prefix=f"{API_PREFIX}/match", tags=["match"])
 app.include_router(discovery_router, prefix=f"{API_PREFIX}/discover", tags=["discover"])
 app.include_router(auth_router, prefix=f"{API_PREFIX}/auth", tags=["auth"])
 app.include_router(onboard_router, prefix=f"{API_PREFIX}/onboard", tags=["onboard"])
+app.include_router(email_router, prefix=f"{API_PREFIX}/email", tags=["email"])

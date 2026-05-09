@@ -19,6 +19,9 @@ dependencies = [
     "numpy>=2.0.0",
     # Local sentence-transformer for the EmbeddingMatcher (Apache 2.0, runs offline).
     "sentence-transformers>=3.0.0",
+    # Outreach email rendering + delivery.
+    "jinja2>=3.1.0",
+    "resend>=2.0.0",
 ]
 
 [project.optional-dependencies]

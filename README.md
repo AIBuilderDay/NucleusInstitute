@@ -641,6 +641,81 @@ shared with the LinkedIn flow.
 
 ---
 
+## Outreach email — "Send email" button → Resend
+
+`POST /api/v1/email/send` is the endpoint the frontend's "send email" button
+hits. The frontend collects whatever fields it wants the user to fill out
+(subject, message body, banner copy, optional CTA, signoff, etc.), and the
+backend pours those values into a server-side Jinja template that renders to
+HTML and dispatches via [Resend](https://resend.com/).
+
+### Why a server-side template
+
+The template lives at
+[backend/app/templates/email/outreach.html.j2](backend/app/templates/email/outreach.html.j2)
+so every send looks consistent — gradient banner, "From: …" pill, body
+block, optional CTA button, Nucleus footer. The frontend never touches HTML;
+it just types in fields. Auto-escape is on, so user-supplied text can't
+smuggle markup into the email.
+
+### Request
+
+```bash
+curl -X POST http://localhost:8765/api/v1/email/send \
+  -H 'content-type: application/json' \
+  -d '{
+    "sender_type": "talent",
+    "sender_id": "<sender uuid>",
+    "recipient_type": "startup",
+    "recipient_id": "<recipient uuid>",
+    "subject": "Quick intro re: your geothermal stack",
+    "variables": {
+      "banner_eyebrow": "Nucleus Institute",
+      "banner_title": "Jane Doe wants to chat",
+      "banner_subtitle": "Fractional CFO — life sciences & energy",
+      "from_label": "Jane Doe",
+      "from_role": "Fractional CFO",
+      "greeting": "Hi team,",
+      "body": "Saw your seed-stage geothermal play and your CFO gap...",
+      "cta_url": "https://nucleus.example.com/profiles/jane",
+      "cta_label": "View my profile",
+      "signoff": "— Jane",
+      "footer_note": "Reply to chat directly."
+    }
+  }'
+# → 200 {"sent": true, "resend_id": "re_…", "to": "founders@…"}
+```
+
+`sender_type` and `recipient_type` are each `"talent"` or `"startup"`.
+The recipient's `email` column is the actual TO address — talents always have
+one, startups optionally do. If the chosen recipient has no email, the
+endpoint 400s. Reply-to defaults to the sender's email, so replies go back to
+the human, not the platform; override with a top-level `reply_to` if you
+want.
+
+Everything in `variables` is forwarded to the template as-is — the keys
+above (`banner_eyebrow`, `body`, `cta_url`, `signoff`, …) are what the
+template reads, and any of them can be omitted to render an empty section.
+Add new keys whenever you extend the template; no schema change needed.
+
+### Setup
+
+```
+RESEND_API_KEY="re_..."
+EMAIL_FROM_ADDRESS="Nucleus Institute <onboarding@resend.dev>"
+```
+
+`onboarding@resend.dev` works for dev without domain verification; switch to
+a verified domain for prod. If `RESEND_API_KEY` is missing, the endpoint
+returns 503 — the rest of the app still boots.
+
+Implementation:
+[backend/app/api/email.py](backend/app/api/email.py),
+[backend/app/service/email_service.py](backend/app/service/email_service.py),
+[backend/app/model/schema/email.py](backend/app/model/schema/email.py).
+
+---
+
 ## What the demo does **not** do
 
 - No auth, no sessions, no real users — `My Profile` simulates a current user

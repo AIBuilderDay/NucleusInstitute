@@ -18,6 +18,7 @@ class Startup(Base):
     # identity
     name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
     website: Mapped[str | None] = mapped_column(String(500))
+    email: Mapped[str | None] = mapped_column(String(320), index=True)
     logo_url: Mapped[str | None] = mapped_column(String(500))
     one_liner: Mapped[str] = mapped_column(String(400), default="")
     description: Mapped[str] = mapped_column(Text, default="")
