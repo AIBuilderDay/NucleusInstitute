@@ -7,6 +7,7 @@ import { ExplorePage } from "./pages/ExplorePage";
 import { MatchPage } from "./pages/MatchPage";
 import { MyProfilePage } from "./pages/MyProfilePage";
 import { OnboardPage } from "./pages/OnboardPage";
+import { LinkedInPage } from "./pages/LinkedInPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { LandingPage } from "./pages/LandingPage";
 
@@ -160,6 +161,12 @@ export function App() {
                   if (next) setCurrentUser(next);
                 }}
                 onMatchPerson={goMatchPerson}
+              />
+            )}
+            {route === "linkedin" && (
+              <LinkedInPage
+                onContinue={() => setRoute("onboard")}
+                onSkip={() => setRoute("onboard")}
               />
             )}
             {route === "onboard" && (

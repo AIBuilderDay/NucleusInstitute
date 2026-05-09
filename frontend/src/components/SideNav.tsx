@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Route } from "../routeHero";
-import { IUMonogram } from "./ui";
+import { IUMonogram, ExportModal } from "./ui";
 import type { Person, Startup } from "../types";
 import { SECTOR_LABEL, STAGE_LABEL, ROLE_CATEGORY_LABEL } from "../labels";
+import { exportCsv, exportPdf } from "../export";
 
 interface SideNavProps {
   route: Route;
@@ -43,9 +44,16 @@ function NavIcon({ type, active }: { type: string; active?: boolean }) {
     );
   if (type === "gear")
     return (
-      <span className="material-icons text-[18px] leading-none" style={{ color }}>
-        settings
-      </span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+        <path
+          d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+          stroke={color} strokeWidth="1.8"
+        />
+        <path
+          d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"
+          stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+        />
+      </svg>
     );
   if (type === "star")
     return (
@@ -57,9 +65,10 @@ function NavIcon({ type, active }: { type: string; active?: boolean }) {
       </svg>
     );
   return (
-    <span className="material-icons text-[18px] leading-none" style={{ color }}>
-      settings
-    </span>
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <circle cx="7" cy="7" r="2" stroke={color} strokeWidth="1.4" />
+      <path d="M7 1v1.5M7 11.5V13M1 7h1.5M11.5 7H13M2.75 2.75l1.06 1.06M10.19 10.19l1.06 1.06M11.25 2.75l-1.06 1.06M3.81 10.19l-1.06 1.06" stroke={color} strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
   );
 }
 
@@ -114,6 +123,7 @@ export function SideNav({
         .toUpperCase()
     : "";
 
+  const [exportOpen, setExportOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeIdx, setActiveIdx] = useState(-1);
@@ -317,6 +327,18 @@ export function SideNav({
           className="p-12 border-t border-solid border-pearl-200 flex flex-col gap-8"
         >
           <SideNavItem
+            active={false}
+            onClick={() => setExportOpen(true)}
+            icon={
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M7 2v7M4.5 6.5L7 9l2.5-2.5" stroke="var(--graphite-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M2 10v1.5a1 1 0 001 1h8a1 1 0 001-1V10" stroke="var(--graphite-muted)" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            }
+          >
+            Export
+          </SideNavItem>
+          <SideNavItem
             active={route === "settings"}
             onClick={() => setRoute("settings")}
             icon={<NavIcon type="gear" active={route === "settings"} />}
@@ -324,7 +346,7 @@ export function SideNav({
             Settings
           </SideNavItem>
           <button
-            onClick={() => setRoute("onboard")}
+            onClick={() => setRoute("linkedin")}
             className="py-8 px-12 text-[12px] text-graphite-muted bg-transparent border-0 text-left cursor-pointer rounded-[6px]"
           >
             Join / Re-onboard
@@ -354,6 +376,12 @@ export function SideNav({
           )}
         </div>
       )}
+      <ExportModal
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        onCsv={() => exportCsv(people, startups)}
+        onPdf={() => exportPdf(people, startups)}
+      />
     </aside>
   );
 }

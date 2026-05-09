@@ -353,6 +353,79 @@ export function Field({
   );
 }
 
+// ── Export modal ─────────────────────────────────────────────────────────────
+interface ExportModalProps {
+  open: boolean;
+  onClose: () => void;
+  onCsv: () => void;
+  onPdf: () => void;
+}
+
+export function ExportModal({ open, onClose, onCsv, onPdf }: ExportModalProps) {
+  if (!open) return null;
+  return (
+    <div
+      onClick={onClose}
+      className="fixed inset-0 bg-[rgba(15,44,79,0.35)] z-70 flex items-center justify-center"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="fade-in bg-white rounded-[12px] shadow-[0_16px_48px_rgba(0,0,0,0.18)] w-[420px] max-w-[92vw] overflow-hidden"
+      >
+        <div className="py-20 px-24 border-b border-pearl-200">
+          <h3 className="font-display text-[20px] text-nucleus-blue m-0">
+            Export Data
+          </h3>
+          <p className="text-[13px] text-graphite-muted mt-4 mb-0">
+            Download all people and startups data.
+          </p>
+        </div>
+        <div className="p-24 flex gap-12">
+          <button
+            onClick={() => { onCsv(); onClose(); }}
+            className="flex-1 py-16 px-16 rounded-[8px] border border-solid border-pearl-300 bg-pearl cursor-pointer transition-all duration-150 hover:border-nucleus-blue hover:bg-blue-50 text-left group"
+          >
+            <div className="flex items-center gap-10 mb-6">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="shrink-0">
+                <rect x="2" y="2" width="16" height="16" rx="2" stroke="var(--nucleus-blue)" strokeWidth="1.5" fill="none" />
+                <path d="M6 7h8M6 10h8M6 13h5" stroke="var(--nucleus-blue)" strokeWidth="1.2" strokeLinecap="round" />
+              </svg>
+              <span className="font-display font-medium text-[15px] text-graphite">CSV</span>
+            </div>
+            <span className="text-[12px] text-graphite-muted">
+              Spreadsheet-compatible. Opens in Excel, Sheets, etc.
+            </span>
+          </button>
+          <button
+            onClick={() => { onPdf(); onClose(); }}
+            className="flex-1 py-16 px-16 rounded-[8px] border border-solid border-pearl-300 bg-pearl cursor-pointer transition-all duration-150 hover:border-nucleus-blue hover:bg-blue-50 text-left group"
+          >
+            <div className="flex items-center gap-10 mb-6">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="shrink-0">
+                <rect x="2" y="2" width="16" height="16" rx="2" stroke="var(--nucleus-blue)" strokeWidth="1.5" fill="none" />
+                <path d="M6 6h4l4 4v6H6V6z" stroke="var(--nucleus-blue)" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+                <path d="M10 6v4h4" stroke="var(--nucleus-blue)" strokeWidth="1.2" strokeLinecap="round" />
+              </svg>
+              <span className="font-display font-medium text-[15px] text-graphite">PDF</span>
+            </div>
+            <span className="text-[12px] text-graphite-muted">
+              Formatted document. Ready to share or print.
+            </span>
+          </button>
+        </div>
+        <div className="px-24 pb-20 flex justify-end">
+          <button
+            onClick={onClose}
+            className="btn btn-ghost py-6 px-14 text-[12px]"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Generic clickable card-row helper for the keyboard handler pattern ────────
 export function cardKeyHandler(onClick?: () => void) {
   return (e: KeyboardEvent<HTMLDivElement>) => {
