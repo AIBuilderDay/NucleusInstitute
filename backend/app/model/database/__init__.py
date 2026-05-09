@@ -1,5 +1,6 @@
 """Import all ORM models so `Base.metadata` knows about them at create_all time."""
 
+from app.model.database.follow import StartupFollow, TalentFollow
 from app.model.database.startup import Startup
 from app.model.database.startup_profile_extension import StartupProfileExtension
 from app.model.database.talent import Talent
@@ -10,4 +11,6 @@ __all__ = [
     "Startup",
     "TalentProfileExtension",
     "StartupProfileExtension",
+    "TalentFollow",
+    "StartupFollow",
 ]

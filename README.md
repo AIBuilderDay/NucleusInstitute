@@ -142,6 +142,115 @@ the extended text directly from the DB without changing the wire contract.
 
 ---
 
+## Following + network score (PageRank)
+
+Talent can follow other talent or startups. We run **PageRank** over the
+follow graph and turn each person's score into a percentile bracket so they
+get a one-glance answer to "how connected am I?"
+
+### What's PageRank?
+
+PageRank is the algorithm Larry Page and Sergey Brin invented at Stanford to
+rank web pages — it's what made early Google work. The intuition is simple
+and surprisingly applies to people just as well as web pages:
+
+> **You are important if important people connect to you.**
+
+The score is computed by repeatedly redistributing "rank mass" along the
+edges of the graph. Concretely, each person's score is
+
+```
+PR(you) = (1 - d)/N  +  d · Σ over your followers f of  PR(f) / out_degree(f)
+```
+
+where `d = 0.85` (damping), `N` is the number of nodes, and `out_degree(f)` is
+how many people follower `f` is following. A few useful consequences:
+
+- **Your score depends on who follows you, not who you follow.** Following
+  more people doesn't inflate your own score.
+- **A follow from someone well-connected is worth more than a follow from
+  someone obscure.** A nod from a respected mentor with a large network beats
+  a nod from a brand-new account.
+- **Following too many people dilutes the rank you pass on.** If you follow
+  100 accounts, each one gets 1/100th of your influence.
+
+We follow the formulation taught in BYU ACME's [PageRank lab][byu-pagerank]
+including the standard dangling-node fix (rank from sinks gets redistributed
+uniformly, so rank doesn't leak out of the system). Implementation in
+[backend/app/service/pagerank_service.py](backend/app/service/pagerank_service.py).
+
+[byu-pagerank]: https://labs.acme.byu.edu/Volume1/PageRank/PageRank.html
+
+### Two graphs
+
+Both are computed and cached separately. The cache key is `(talent_count,
+startup_count, follow_edge_count)` — any mutation invalidates the cache and
+the next request recomputes.
+
+| Graph             | Nodes                                     | Edges                                          | Used for |
+|-------------------|-------------------------------------------|------------------------------------------------|----------|
+| `people_only`     | All talent rows (all 9 RoleCategories)    | talent → talent                                | Personal centrality among humans |
+| `full_ecosystem`  | All talent **and** all startups           | talent → talent + talent → startup             | Same plus "ecosystem attention" — also produces a score for startups |
+
+Including or excluding startup nodes doesn't change a person's relative rank
+much (talent → startup edges are sinks under standard PageRank — startups
+don't follow back), but exposing both lets us rank startups too in the
+`full_ecosystem` graph.
+
+### Brackets — "how connected are you?"
+
+A raw score isn't useful by itself. We turn it into a **percentile within
+the same role_category cohort** (mentors compared to mentors, students to
+students, etc.) so a student in the top of their cohort gets credit even if
+mentors as a group score higher in absolute terms. The percentile lands in
+one of four buckets:
+
+| Percentile | Bracket             | Reading                                                  |
+|------------|---------------------|----------------------------------------------------------|
+| 0–25       | **Limited network** | Most of the cohort has more inbound activity. Big upside if you start engaging. |
+| 25–50      | Growing network     | You're building. A few well-placed follows from active mentors / investors will jump you a bracket. |
+| 50–75      | Strong network      | Solidly connected — comparable to or better than half the cohort. |
+| 75–100     | **Highly connected**| Top quartile of your cohort. People look to you. |
+
+Startups get the same brackets, scored against all other startups in
+the `full_ecosystem` graph.
+
+### How it helps people improve
+
+The bracket isn't a vanity badge — the response carries the raw score, the
+rank within cohort, and the cohort size, so the frontend can show:
+
+- **Where you stand** — "Strong network — ranked 12 of 60 mentors."
+- **What moves the needle** — because PageRank weights by follower quality,
+  the practical advice is consistent: get followed by people who are
+  themselves well-followed (engaged mentors, active investors), and don't
+  fan out your own follows so wide that your outgoing influence is diluted.
+- **A direct comparison across graphs** — `people_only` vs `full_ecosystem`
+  lets a person see whether their connectivity comes from people or from
+  saving startups.
+
+### Endpoints
+
+```
+POST   /api/v1/talent/{id}/follow/talent/{target_id}     204 (idempotent)
+DELETE /api/v1/talent/{id}/follow/talent/{target_id}     204 (idempotent)
+POST   /api/v1/talent/{id}/follow/startup/{startup_id}   204
+DELETE /api/v1/talent/{id}/follow/startup/{startup_id}   204
+GET    /api/v1/talent/{id}/following                     {talent: [...], startups: [...]}
+GET    /api/v1/talent/{id}/followers                     [...] (talent followers)
+GET    /api/v1/talent/{id}/network-score                 score + brackets for both graphs
+GET    /api/v1/startup/{id}/followers                    talent who follow this startup
+GET    /api/v1/startup/{id}/network-score                full_ecosystem score only
+```
+
+The seeder generates a deterministic starter graph (~3,000 talent → talent
+edges + ~700 talent → startup edges) biased by role-pair affinity (students
+follow mentors more than the reverse, executives follow investors, etc.) and
+sector overlap. Same RNG seed every boot, so percentiles are stable across
+restarts.
+
+---
+
 ## Onboarding: "Connect with LinkedIn" → agent-built profile
 
 A second Claude agent owns onboarding. Connect-with-LinkedIn gives us identity

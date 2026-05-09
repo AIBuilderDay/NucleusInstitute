@@ -25,11 +25,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.dao.daos.follow_dao import StartupFollowDAO, TalentFollowDAO
 from app.model.database.startup import Startup
 from app.model.database.talent import Talent
 from app.model.schema.startup import StartupCreate
 from app.model.schema.talent import TalentCreate
-from app.seed.generator import build_synthetic_batch
+from app.seed.generator import build_follow_edges, build_synthetic_batch
 
 logger = settings.logger
 
@@ -51,45 +52,99 @@ def _load_seed_file() -> dict[str, list[dict[str, Any]]]:
 
 
 async def seed_if_empty(session: AsyncSession) -> dict[str, int] | None:
-    """Insert seed data iff both Talent and Startup tables are empty.
+    """Insert seed data into any tables that are still empty.
 
-    Returns counts on success, None if seeding was skipped (data already exists).
+    Three independent passes — talents+startups together, then talent→talent
+    edges, then talent→startup edges — so a DB that was seeded *before* the
+    follow graph existed will pick up edges on the next boot without needing
+    a wipe-and-restart.
+
+    Returns counts on success, None if everything was already populated.
     """
-    talent_count = (
+    inserted = {"talents": 0, "startups": 0, "talent_follows": 0, "startup_follows": 0}
+    talent_follow_dao = TalentFollowDAO(session)
+    startup_follow_dao = StartupFollowDAO(session)
+
+    talent_present = (
         await session.execute(select(Talent).limit(1))
-    ).scalar_one_or_none()
-    startup_count = (
+    ).scalar_one_or_none() is not None
+    startup_present = (
         await session.execute(select(Startup).limit(1))
-    ).scalar_one_or_none()
+    ).scalar_one_or_none() is not None
 
-    if talent_count is not None or startup_count is not None:
-        return None
+    persisted_talents: list[Talent] = []
+    persisted_startups: list[Startup] = []
 
-    seed = _load_seed_file()
-    generated = build_synthetic_batch()
-    logger.info(
-        f"Generated synthetic batch: {len(generated['talents'])} talents, "
-        f"{len(generated['startups'])} startups"
+    if not talent_present and not startup_present:
+        seed = _load_seed_file()
+        generated = build_synthetic_batch()
+        logger.info(
+            f"Generated synthetic batch: {len(generated['talents'])} talents, "
+            f"{len(generated['startups'])} startups"
+        )
+
+        talents = seed["talents"] + generated["talents"]
+        startups = seed["startups"] + generated["startups"]
+
+        for talent_dict in talents:
+            validated = TalentCreate.model_validate(talent_dict)
+            row = Talent(**validated.model_dump(mode="json"))
+            session.add(row)
+            persisted_talents.append(row)
+            inserted["talents"] += 1
+
+        for startup_dict in startups:
+            validated = StartupCreate.model_validate(startup_dict)
+            row = Startup(**validated.model_dump(mode="json"))
+            session.add(row)
+            persisted_startups.append(row)
+            inserted["startups"] += 1
+
+        await session.commit()
+    else:
+        # Talent/Startup already seeded; pull existing rows so we can build
+        # follow edges against their UUIDs if the follow tables are empty.
+        persisted_talents = list(
+            (await session.execute(select(Talent))).scalars().all()
+        )
+        persisted_startups = list(
+            (await session.execute(select(Startup))).scalars().all()
+        )
+
+    # Seed follow graph if the tables are empty. Independent of whether we
+    # just inserted talents above or pulled them from a prior boot.
+    edges_present = await talent_follow_dao.total_count() > 0 or (
+        await startup_follow_dao.total_count() > 0
     )
+    if not edges_present and persisted_talents:
+        talent_index: list[dict[str, Any]] = [
+            {
+                "id": t.id,
+                "role_category": t.role_category,
+                "sectors_of_interest": list(t.sectors_of_interest or []),
+            }
+            for t in persisted_talents
+        ]
+        startup_index: list[dict[str, Any]] = [
+            {
+                "id": s.id,
+                "sector": s.sector,
+                "sectors_secondary": list(s.sectors_secondary or []),
+            }
+            for s in persisted_startups
+        ]
+        edges = build_follow_edges(talents=talent_index, startups=startup_index)
+        inserted["talent_follows"] = await talent_follow_dao.bulk_insert(
+            edges["talent_follows"]
+        )
+        inserted["startup_follows"] = await startup_follow_dao.bulk_insert(
+            edges["startup_follows"]
+        )
+        logger.info(
+            f"Seeded follow graph: {inserted['talent_follows']} talent→talent, "
+            f"{inserted['startup_follows']} talent→startup edges"
+        )
 
-    talents = seed["talents"] + generated["talents"]
-    startups = seed["startups"] + generated["startups"]
-
-    if not talents and not startups:
+    if all(v == 0 for v in inserted.values()):
         return None
-
-    inserted = {"talents": 0, "startups": 0}
-
-    for talent_dict in talents:
-        # Validate via Pydantic so a bad row raises early with a clear message.
-        validated = TalentCreate.model_validate(talent_dict)
-        session.add(Talent(**validated.model_dump(mode="json")))
-        inserted["talents"] += 1
-
-    for startup_dict in startups:
-        validated = StartupCreate.model_validate(startup_dict)
-        session.add(Startup(**validated.model_dump(mode="json")))
-        inserted["startups"] += 1
-
-    await session.commit()
     return inserted

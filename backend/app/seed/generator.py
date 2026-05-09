@@ -891,3 +891,161 @@ def build_synthetic_batch(
         startups.append(_gen_startup(rng, i + 1))
 
     return {"talents": talents, "startups": startups}
+
+
+# ---------- Follow-graph generation ---------------------------------------------
+#
+# Called by `seed_if_empty` AFTER talents + startups have been inserted, so we
+# work from real DB rows (and their UUIDs) rather than the pre-insert dicts. The
+# generator is deterministic — same inputs in the same order yield the same
+# graph — but it lives here next to the rest of the synthetic data because the
+# weights and biases below are tightly coupled to the role / sector vocabulary
+# the rest of this module produces.
+
+# Role-pair affinity: weight applied when follower has role A and followee has
+# role B. Defaults to 0.5 (nonzero, but unweighted) for unlisted pairs so every
+# combination is reachable. Numbers were tuned to produce a non-uniform PageRank
+# distribution on the seeded dataset (otherwise everything ends up at 1/N).
+_ROLE_FOLLOW_AFFINITY: dict[tuple[str, str], float] = {
+    ("student", "mentor"): 5.0,
+    ("student", "executive"): 3.0,
+    ("student", "operator"): 3.0,
+    ("student", "advisor"): 2.0,
+    ("student", "investor"): 1.5,
+    ("intern", "operator"): 4.0,
+    ("intern", "mentor"): 3.0,
+    ("intern", "executive"): 2.5,
+    ("intern", "student"): 1.5,
+    ("operator", "executive"): 3.0,
+    ("operator", "operator"): 2.0,
+    ("operator", "mentor"): 2.5,
+    ("operator", "advisor"): 1.5,
+    ("operator", "investor"): 1.5,
+    ("executive", "executive"): 2.5,
+    ("executive", "investor"): 3.0,
+    ("executive", "board_member"): 2.0,
+    ("executive", "advisor"): 2.0,
+    ("executive", "mentor"): 2.0,
+    ("investor", "investor"): 3.0,
+    ("investor", "executive"): 3.5,
+    ("investor", "advisor"): 2.0,
+    ("investor", "operator"): 2.0,
+    ("advisor", "executive"): 2.0,
+    ("advisor", "advisor"): 2.0,
+    ("advisor", "investor"): 1.5,
+    ("mentor", "executive"): 2.0,
+    ("mentor", "operator"): 2.0,
+    ("mentor", "mentor"): 1.5,
+    ("board_member", "executive"): 2.5,
+    ("board_member", "investor"): 2.5,
+    ("board_member", "board_member"): 2.0,
+    ("service_provider", "executive"): 2.0,
+    ("service_provider", "investor"): 2.5,
+    ("service_provider", "service_provider"): 1.5,
+}
+
+
+def _pair_weight(
+    follower: dict, followee: dict, sector_overlap_boost: float = 1.5
+) -> float:
+    base = _ROLE_FOLLOW_AFFINITY.get(
+        (follower["role_category"], followee["role_category"]),
+        0.5,
+    )
+    f_sectors = set(follower.get("sectors_of_interest") or [])
+    e_sectors = set(followee.get("sectors_of_interest") or [])
+    overlap = len(f_sectors & e_sectors)
+    return base * (1.0 + sector_overlap_boost * overlap)
+
+
+def _talent_startup_weight(talent: dict, startup: dict) -> float:
+    """Higher when the startup's sector overlaps with the talent's interests."""
+    talent_sectors = set(talent.get("sectors_of_interest") or [])
+    startup_sectors = {startup.get("sector")} | set(
+        startup.get("sectors_secondary") or []
+    )
+    overlap = len(talent_sectors & startup_sectors)
+    if overlap == 0:
+        return 0.2
+    return 1.0 + 1.5 * overlap
+
+
+def _weighted_sample_without_replacement(
+    rng: random.Random,
+    items: list[Any],
+    weights: list[float],
+    k: int,
+) -> list[Any]:
+    """Stable weighted sampling without replacement.
+
+    Uses the standard "exponential trick" (Efraimidis-Spirakis): for each item
+    draw u ~ U(0,1), key = u**(1/weight), take the top-k by key. Works
+    correctly with non-uniform weights and zeros (zero-weight items can't be
+    selected because their key is 0).
+    """
+    if k >= len(items):
+        return list(items)
+    keyed: list[tuple[float, int]] = []
+    for i, w in enumerate(weights):
+        if w <= 0:
+            continue
+        u = rng.random()
+        # u**(1/w) sorted descending = ES sampling
+        keyed.append((u ** (1.0 / w), i))
+    keyed.sort(reverse=True)
+    chosen = [items[i] for _, i in keyed[:k]]
+    # If we under-filled (because too many zero weights), pad uniformly
+    if len(chosen) < k:
+        leftover = [items[i] for i in range(len(items)) if items[i] not in chosen]
+        rng.shuffle(leftover)
+        chosen += leftover[: k - len(chosen)]
+    return chosen
+
+
+def build_follow_edges(
+    *,
+    talents: list[dict[str, Any]],
+    startups: list[dict[str, Any]],
+    follows_per_talent_min: int = 3,
+    follows_per_talent_max: int = 14,
+    startups_per_talent_min: int = 0,
+    startups_per_talent_max: int = 5,
+) -> dict[str, list[tuple[Any, Any]]]:
+    """Produce deterministic follow edges over already-persisted entities.
+
+    Each input dict MUST carry an `id` key (UUID). `talents` includes both
+    the curated and procedurally-generated rows; `startups` likewise.
+
+    Returns a dict with two keys:
+      - `talent_follows`  : list of (follower_talent_id, followee_talent_id)
+      - `startup_follows` : list of (follower_talent_id, startup_id)
+    """
+    rng = random.Random(_RNG_SEED + 1)
+
+    talent_edges: list[tuple[Any, Any]] = []
+    startup_edges: list[tuple[Any, Any]] = []
+
+    n_talents = len(talents)
+    n_startups = len(startups)
+    if n_talents == 0:
+        return {"talent_follows": [], "startup_follows": []}
+
+    for follower in talents:
+        # Talent → Talent
+        candidates = [t for t in talents if t["id"] != follower["id"]]
+        weights = [_pair_weight(follower, c) for c in candidates]
+        k = min(rng.randint(follows_per_talent_min, follows_per_talent_max), len(candidates))
+        chosen = _weighted_sample_without_replacement(rng, candidates, weights, k)
+        for c in chosen:
+            talent_edges.append((follower["id"], c["id"]))
+
+        # Talent → Startup
+        if n_startups > 0:
+            ks = rng.randint(startups_per_talent_min, startups_per_talent_max)
+            if ks > 0:
+                weights_s = [_talent_startup_weight(follower, s) for s in startups]
+                chosen_s = _weighted_sample_without_replacement(rng, startups, weights_s, ks)
+                for s in chosen_s:
+                    startup_edges.append((follower["id"], s["id"]))
+
+    return {"talent_follows": talent_edges, "startup_follows": startup_edges}
