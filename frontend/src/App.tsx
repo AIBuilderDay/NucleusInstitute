@@ -7,43 +7,58 @@ import { ExplorePage } from "./pages/ExplorePage";
 import { MatchPage } from "./pages/MatchPage";
 import { MyProfilePage } from "./pages/MyProfilePage";
 import { OnboardPage } from "./pages/OnboardPage";
-<<<<<<< HEAD
 import { EcosystemPage } from "./ecosystem/EcosystemPage";
-=======
 import { LinkedInPage } from "./pages/LinkedInPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { LandingPage } from "./pages/LandingPage";
->>>>>>> main
 
 interface MatchSeed {
   person: Person | null;
   startup: Startup | null;
 }
 
+const POST_LOGIN_ROUTE_KEY = "nucleus.post_login_route";
+const VALID_POST_LOGIN_ROUTES: ReadonlyArray<Route> = [
+  "ecosystem",
+  "onboard",
+  "explore",
+  "profile",
+];
+
+/**
+ * Decide where to land on initial mount.
+ *
+ * - If the URL has an OAuth handoff token, the browser just came back from
+ *   LinkedIn / Google. Read the breadcrumb the originating page stashed in
+ *   localStorage to know where to send them. (EcosystemPage stashes
+ *   "ecosystem"; LandingPage stashes "onboard".) Consume the breadcrumb on
+ *   read so a refresh doesn't repeat it.
+ * - If no breadcrumb survives, fall back to "ecosystem" — the page that's
+ *   designed to consume the handoff token.
+ * - Cold visit (no token) → "landing".
+ */
 function pickInitialRoute(): Route {
-  // If the browser landed here from a LinkedIn / Google OAuth callback, the
-  // URL carries a handoff token. The Ecosystem page is the surface that
-  // consumes it (auto-personalizes the matches), so route there on mount
-  // regardless of which path the backend redirected to.
-  if (typeof window !== "undefined") {
-    const sp = new URL(window.location.href).searchParams;
-    if (
-      sp.get("linkedin_handoff") ||
-      sp.get("google_handoff") ||
-      sp.get("demo_signin")
-    ) {
-      return "ecosystem";
+  if (typeof window === "undefined") return "landing";
+  const sp = new URL(window.location.href).searchParams;
+  const hasHandoff =
+    sp.get("linkedin_handoff") ||
+    sp.get("google_handoff") ||
+    sp.get("demo_signin");
+  if (!hasHandoff) return "landing";
+  try {
+    const stored = localStorage.getItem(POST_LOGIN_ROUTE_KEY);
+    localStorage.removeItem(POST_LOGIN_ROUTE_KEY);
+    if (stored && (VALID_POST_LOGIN_ROUTES as readonly string[]).includes(stored)) {
+      return stored as Route;
     }
+  } catch {
+    /* private mode / no localStorage — fall through */
   }
-  return "browse";
+  return "ecosystem";
 }
 
 export function App() {
-<<<<<<< HEAD
   const [route, setRoute] = useState<Route>(pickInitialRoute);
-=======
-  const [route, setRoute] = useState<Route>("landing");
->>>>>>> main
   const [people, setPeople] = useState<Person[]>([]);
   const [startups, setStartups] = useState<Startup[]>([]);
   const [currentUser, setCurrentUser] = useState<Person | null>(null);
@@ -119,106 +134,6 @@ export function App() {
   }
 
   return (
-<<<<<<< HEAD
-    <div>
-      {route !== "ecosystem" && <HeroStrip dense {...HERO} />}
-      <TopNav route={route} setRoute={setRoute} />
-
-      {loadError && (
-        <div
-          style={{
-            maxWidth: 1440,
-            margin: "0 auto",
-            padding: "20px 32px",
-            color: "#8a3a3a",
-            fontSize: 13,
-            background: "#fbe8e0",
-            borderBottom: "1px solid #f1c8b9",
-          }}
-        >
-          ⚠ {loadError}
-        </div>
-      )}
-
-      {loading && !loadError && (
-        <div style={{ maxWidth: 1440, margin: "0 auto", padding: "32px 32px" }}>
-          <div className="shimmer" style={{ height: 120, marginBottom: 12 }} />
-          <div className="shimmer" style={{ height: 120, marginBottom: 12 }} />
-          <div className="shimmer" style={{ height: 120 }} />
-        </div>
-      )}
-
-      {!loading && !loadError && (
-        <>
-          {route === "browse" && (
-            <BrowsePage
-              people={people}
-              startups={startups}
-              onMatchPerson={goMatchPerson}
-              onMatchStartup={goMatchStartup}
-            />
-          )}
-          {route === "match" && currentUser && (
-            <MatchPage
-              people={people}
-              startups={startups}
-              initialPerson={matchSeed.person}
-              initialStartup={matchSeed.startup}
-              currentUser={currentUser}
-            />
-          )}
-          {route === "profile" && currentUser && (
-            <MyProfilePage
-              people={people}
-              startups={startups}
-              currentUser={currentUser}
-              onSwitchUser={(id) => {
-                const next = people.find((p) => p.id === id);
-                if (next) setCurrentUser(next);
-              }}
-              onMatchPerson={goMatchPerson}
-            />
-          )}
-          {route === "onboard" && (
-            <OnboardPage
-              onComplete={async (created) => {
-                const refreshed = await reloadPeople();
-                const next = refreshed.find((p) => p.id === created.id) ?? created;
-                setCurrentUser(next);
-                setRoute("profile");
-              }}
-            />
-          )}
-          {route === "ecosystem" && <EcosystemPage />}
-        </>
-      )}
-
-      <footer
-        style={{
-          padding: "32px 32px 48px",
-          maxWidth: 1440,
-          margin: "0 auto",
-          borderTop: "1px solid var(--color-border)",
-          color: "var(--slate)",
-          fontSize: 12,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: 12,
-          }}
-        >
-          <div>Innovate Utah · Connections Hub · for Utah's deep-tech ecosystem.</div>
-          <div className="mono" style={{ fontSize: 11, color: "var(--slate-light)" }}>
-            backend:{" "}
-            <span style={{ color: apiState.live ? "var(--copper)" : "var(--slate)" }}>
-              {apiState.live ? `${api.base} (live)` : `${api.base} (offline)`}
-            </span>
-=======
     <div className="min-h-screen flex">
       <SideNav
         route={route}
@@ -236,7 +151,6 @@ export function App() {
             className="py-20 px-32 text-[#8a3a3a] text-[13px] bg-[#fbe8e0] border-b border-[#f1c8b9]"
           >
             ⚠ {loadError}
->>>>>>> main
           </div>
         )}
 
@@ -250,9 +164,6 @@ export function App() {
 
         {!loading && !loadError && (
           <main className="flex-1">
-            {route === "landing" && (
-              <LandingPage onEnter={() => setRoute("explore")} />
-            )}
             {route === "explore" && (
               <ExplorePage
                 people={people}
@@ -317,6 +228,7 @@ export function App() {
                 apiLive={apiState.live}
               />
             )}
+            {route === "ecosystem" && <EcosystemPage />}
           </main>
         )}
 
