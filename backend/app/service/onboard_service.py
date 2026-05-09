@@ -25,11 +25,37 @@ from fastmcp import Client
 from app.core.config import settings
 from app.dao.factory import DAOFactory
 from app.model.database.talent import Talent
-from app.model.schema.auth import GoogleUserInfo, LinkedInUserInfo
+from app.model.schema.auth import (
+    ExtractKeywordsResponse,
+    GoogleUserInfo,
+    InferInterestsResponse,
+    LinkedInUserInfo,
+)
 
 MODEL_ID = "claude-sonnet-4-6"
 MAX_LOOP_ITERATIONS = 6  # 1 initial + up to 5 follow-ups; leaves room for retries
 MAX_TOKENS = 4096
+
+# Interest-inference call. Smaller budget — single-shot, JSON output.
+INFER_MAX_TOKENS = 2048
+INFER_WEB_SEARCH_USES = 4
+
+# Sector vocabulary the inference agent must pick from. Mirrors the frontend
+# InterestModal's SECTOR_OPTIONS so the popup chip layout matches.
+INFER_SECTOR_VOCAB = [
+    "B2B Software",
+    "FinTech",
+    "Life Sciences",
+    "AI / ML",
+    "Security",
+    "Hardware",
+    "Consumer",
+    "Energy",
+    "EdTech",
+    "AgTech",
+    "Defense & Aerospace",
+    "Manufacturing",
+]
 
 
 from dataclasses import dataclass
@@ -359,3 +385,216 @@ class OnboardService:
             f"{provider_label} USERINFO (OIDC):\n{info_json}"
             f"{resume_block}"
         )
+
+    # -------------------------------------------------------------------------
+    # Interest inference (Ecosystem page) — read-only, no DB write.
+    # -------------------------------------------------------------------------
+
+    async def infer_interests(
+        self,
+        *,
+        userinfo: LinkedInUserInfo,
+    ) -> InferInterestsResponse:
+        """Run a one-shot Claude call with web_search to infer the user's
+        interests from public traces. Returns a structured InferInterestsResponse.
+
+        Falls back to a low-confidence empty response if web_search isn't
+        available on the SDK / model combo, the agent returns malformed JSON,
+        or any other recoverable error happens.
+        """
+        client = self._get_client()  # raises 503 if no ANTHROPIC_API_KEY
+
+        info_json = userinfo.model_dump_json(indent=2, exclude_none=True)
+
+        system = self._infer_system_prompt()
+        user_msg = self._infer_user_prompt(info_json)
+
+        try:
+            response = await client.messages.create(
+                model=MODEL_ID,
+                max_tokens=INFER_MAX_TOKENS,
+                tools=[
+                    {
+                        "type": "web_search_20250305",
+                        "name": "web_search",
+                        "max_uses": INFER_WEB_SEARCH_USES,
+                    }
+                ],
+                system=system,
+                messages=[{"role": "user", "content": user_msg}],
+            )
+        except Exception as exc:
+            # If web_search isn't supported on this model/version, retry without it.
+            settings.logger.warning(
+                f"infer_interests: web_search call failed ({exc}); retrying without tools",
+                exc_info=True,
+            )
+            response = await client.messages.create(
+                model=MODEL_ID,
+                max_tokens=INFER_MAX_TOKENS,
+                system=system,
+                messages=[{"role": "user", "content": user_msg}],
+            )
+
+        # Concatenate all final-turn text blocks; the JSON envelope is in there.
+        final_text = "".join(
+            getattr(b, "text", "")
+            for b in response.content
+            if getattr(b, "type", None) == "text"
+        )
+
+        parsed = _extract_json_object(final_text)
+        if parsed is None:
+            settings.logger.warning(
+                f"infer_interests: could not parse JSON from agent output: {final_text[:500]!r}"
+            )
+            return InferInterestsResponse(
+                evidence=["Could not parse agent output."],
+                confidence="low",
+            )
+
+        try:
+            return InferInterestsResponse.model_validate(parsed)
+        except Exception:
+            settings.logger.warning(
+                f"infer_interests: Pydantic rejected agent JSON: {parsed!r}",
+                exc_info=True,
+            )
+            return InferInterestsResponse(
+                evidence=["Agent output failed validation."],
+                confidence="low",
+            )
+
+    def _infer_system_prompt(self) -> str:
+        return (
+            "You are a research assistant for the Innovate Utah Ecosystem app — a "
+            "directory of Utah-based startups and state founder resources.\n\n"
+            "A user just signed in with LinkedIn. You have their basic OIDC profile "
+            "info (name, email, picture). Your job: infer their professional "
+            "interests so the app can pre-filter relevant startups and resources.\n\n"
+            "USE THE web_search TOOL to look up the user's public footprint:\n"
+            "  - Search '<full name> <email-domain>' for their company/role\n"
+            "  - Search '<full name> Utah' or '<full name> Salt Lake' for location\n"
+            "  - Search for personal sites, GitHub, news mentions, conference talks\n"
+            "  - Stop after at most 4 searches — quality over quantity\n\n"
+            "Then return ONE valid JSON object with EXACTLY these fields and no "
+            "extra prose around it:\n\n"
+            "{\n"
+            '  "city": "Salt Lake City",        // best Utah city guess, or "" if unknown\n'
+            '  "sectors": ["B2B Software"],     // 0-2 from vocabulary below\n'
+            '  "stages": ["seed"],              // 0-2 of: pre_seed, seed, series_a, series_b, series_c_plus, growth, public\n'
+            '  "lookingFor": ["both"],          // 1+ of: resources, startups, both\n'
+            '  "evidence": [                    // 1-4 short concrete sentences\n'
+            '    "LinkedIn (cached) shows X works at Y in Salt Lake City.",\n'
+            '    "Personal site at z.com mentions fintech focus."\n'
+            "  ],\n"
+            '  "confidence": "medium"           // low | medium | high\n'
+            "}\n\n"
+            "SECTOR VOCABULARY (use these EXACT strings):\n"
+            f"  {', '.join(INFER_SECTOR_VOCAB)}\n\n"
+            "RULES:\n"
+            "- Be honest. If web_search returns nothing useful, set confidence='low' "
+            "and put 'Could not find public profile information' in evidence.\n"
+            "- Do not invent specific employers, projects, or companies. Only cite "
+            "what an actual search result said.\n"
+            "- Keep evidence sentences short and concrete — they will be shown "
+            "verbatim to the user as a 'what we found' list.\n"
+            "- Output ONLY the JSON object — no preamble, no commentary, no markdown "
+            "fences. Just the raw JSON."
+        )
+
+    def _infer_user_prompt(self, info_json: str) -> str:
+        return (
+            "Infer interests for this user.\n\n"
+            f"LINKEDIN OIDC USERINFO:\n{info_json}\n\n"
+            "Use web_search to look them up, then output the JSON envelope."
+        )
+
+    # -------------------------------------------------------------------------
+    # Keyword extraction (Ecosystem page) — distill user free-form text into
+    # concise matchable tags. Used by the InterestModal to suggest filter
+    # additions based on what the user typed in "Anything else?".
+    # -------------------------------------------------------------------------
+
+    async def extract_keywords(self, *, text: str) -> ExtractKeywordsResponse:
+        """One-shot, no tools. Cheap call (~$0.001) — should return in 1–2s."""
+        client = self._get_client()  # raises 503 if no key
+
+        system = (
+            "You distill free-form user prose into a small set of concise "
+            "matchable keywords for an Innovate-Utah ecosystem matcher.\n\n"
+            "RULES:\n"
+            "- Output 3-8 keywords, lowercase, each 1-3 words.\n"
+            "- Each keyword should appear plausibly in a state-program "
+            "description (e.g. 'fda', 'clinical trials', 'workforce', "
+            "'rural', 'manufacturing', 'angel investors', 'veteran').\n"
+            "- Skip filler words, locations already obvious, polite framing, "
+            "and the user's own name.\n"
+            "- Output ONLY a JSON object: {\"keywords\": [\"...\", \"...\"]}. "
+            "No prose, no markdown."
+        )
+
+        user_msg = (
+            f"User text:\n{text.strip()}\n\n"
+            "Return the JSON now."
+        )
+
+        response = await client.messages.create(
+            model=MODEL_ID,
+            max_tokens=512,
+            system=system,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+
+        final_text = "".join(
+            getattr(b, "text", "")
+            for b in response.content
+            if getattr(b, "type", None) == "text"
+        )
+        parsed = _extract_json_object(final_text)
+        if not parsed:
+            return ExtractKeywordsResponse(keywords=[])
+
+        raw = parsed.get("keywords")
+        if not isinstance(raw, list):
+            return ExtractKeywordsResponse(keywords=[])
+        cleaned = [
+            str(k).strip().lower()
+            for k in raw
+            if isinstance(k, str) and k.strip()
+        ]
+        # de-dupe, cap
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for k in cleaned:
+            if k not in seen:
+                seen.add(k)
+                deduped.append(k)
+        return ExtractKeywordsResponse(keywords=deduped[:8])
+
+
+def _extract_json_object(text: str) -> dict[str, Any] | None:
+    """Find the first {...} block in `text` and json.loads it. Tolerant to
+    leading/trailing prose, code fences, etc."""
+    if not text:
+        return None
+    # Strip common ```json fences
+    fenced = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", text)
+    if fenced:
+        try:
+            result = json.loads(fenced.group(1))
+            if isinstance(result, dict):
+                return result
+        except json.JSONDecodeError:
+            pass
+    # Greedy first-{ to last-} fallback
+    first = text.find("{")
+    last = text.rfind("}")
+    if first == -1 or last == -1 or last <= first:
+        return None
+    candidate = text[first : last + 1]
+    try:
+        result = json.loads(candidate)
+        return result if isinstance(result, dict) else None
+    except json.JSONDecodeError:
+        return None

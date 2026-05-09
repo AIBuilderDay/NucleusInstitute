@@ -7,6 +7,7 @@ import { ExplorePage } from "./pages/ExplorePage";
 import { MatchPage } from "./pages/MatchPage";
 import { MyProfilePage } from "./pages/MyProfilePage";
 import { OnboardPage } from "./pages/OnboardPage";
+import { EcosystemPage } from "./ecosystem/EcosystemPage";
 import { LinkedInPage } from "./pages/LinkedInPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { LandingPage } from "./pages/LandingPage";
@@ -17,8 +18,81 @@ interface MatchSeed {
   startup: Startup | null;
 }
 
+export interface OidcUser {
+  name: string;
+  email: string;
+  picture: string;
+  provider: "linkedin" | "google";
+}
+
+const POST_LOGIN_ROUTE_KEY = "nucleus.post_login_route";
+const OIDC_USER_KEY = "nucleus.oidc_user";
+
+function loadOidcUser(): OidcUser | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(OIDC_USER_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<OidcUser>;
+    if (parsed && typeof parsed.name === "string" && typeof parsed.picture === "string") {
+      return parsed as OidcUser;
+    }
+  } catch {
+    /* corrupt — ignore */
+  }
+  return null;
+}
+
+function persistOidcUser(u: OidcUser | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (u) localStorage.setItem(OIDC_USER_KEY, JSON.stringify(u));
+    else localStorage.removeItem(OIDC_USER_KEY);
+  } catch {
+    /* private mode — silently skip */
+  }
+}
+const VALID_POST_LOGIN_ROUTES: ReadonlyArray<Route> = [
+  "ecosystem",
+  "onboard",
+  "explore",
+  "profile",
+];
+
+/**
+ * Decide where to land on initial mount.
+ *
+ * - If the URL has an OAuth handoff token, the browser just came back from
+ *   LinkedIn / Google. Read the breadcrumb the originating page stashed in
+ *   localStorage to know where to send them. (EcosystemPage stashes
+ *   "ecosystem"; LandingPage stashes "onboard".) Consume the breadcrumb on
+ *   read so a refresh doesn't repeat it.
+ * - If no breadcrumb survives, fall back to "ecosystem" — the page that's
+ *   designed to consume the handoff token.
+ * - Cold visit (no token) → "landing".
+ */
+function pickInitialRoute(): Route {
+  if (typeof window === "undefined") return "landing";
+  const sp = new URL(window.location.href).searchParams;
+  const hasHandoff =
+    sp.get("linkedin_handoff") ||
+    sp.get("google_handoff") ||
+    sp.get("demo_signin");
+  if (!hasHandoff) return "landing";
+  try {
+    const stored = localStorage.getItem(POST_LOGIN_ROUTE_KEY);
+    localStorage.removeItem(POST_LOGIN_ROUTE_KEY);
+    if (stored && (VALID_POST_LOGIN_ROUTES as readonly string[]).includes(stored)) {
+      return stored as Route;
+    }
+  } catch {
+    /* private mode / no localStorage — fall through */
+  }
+  return "ecosystem";
+}
+
 export function App() {
-  const [route, setRoute] = useState<Route>("landing");
+  const [route, setRoute] = useState<Route>(pickInitialRoute);
   const [people, setPeople] = useState<Person[]>([]);
   const [startups, setStartups] = useState<Startup[]>([]);
   const [currentUser, setCurrentUser] = useState<Person | null>(null);
@@ -30,6 +104,12 @@ export function App() {
   const [apiState, setApiState] = useState<PingResult>({ live: false });
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [oidcUser, setOidcUserState] = useState<OidcUser | null>(loadOidcUser);
+
+  const setOidcUser = (u: OidcUser | null) => {
+    setOidcUserState(u);
+    persistOidcUser(u);
+  };
 
   useEffect(() => {
     let dead = false;
@@ -104,6 +184,8 @@ export function App() {
         onSelectPerson={goMatchPerson}
         onSelectStartup={goMatchStartup}
         minimal={route === "onboard"}
+        oidcUser={oidcUser}
+        onSignOut={() => setOidcUser(null)}
       />
       <div className="sidenav-content">
         {loadError && (
@@ -124,9 +206,6 @@ export function App() {
 
         {!loading && !loadError && (
           <main className="flex-1">
-            {route === "landing" && (
-              <LandingPage onEnter={() => setRoute("explore")} />
-            )}
             {route === "explore" && (
               <ExplorePage
                 people={people}
@@ -192,6 +271,13 @@ export function App() {
                   if (next) setCurrentUser(next);
                 }}
                 apiLive={apiState.live}
+              />
+            )}
+            {route === "ecosystem" && (
+              <EcosystemPage
+                onSignedIn={(name, email, picture) =>
+                  setOidcUser({ name, email, picture, provider: "linkedin" })
+                }
               />
             )}
           </main>
