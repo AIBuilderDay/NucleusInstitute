@@ -278,6 +278,86 @@ the extended text directly from the DB without changing the wire contract.
 
 ---
 
+## Swipe lists — Tinder-style matched / passed tracking
+
+A lightweight persistence layer behind the swipe-card UI. After a discovery
+batch surfaces candidates, the user swipes right (matched) or left (passed)
+on each card; we keep the IDs so the next fetch can filter out anyone
+they've already seen and so the profile screen can render the two lists
+("matched" and "passed").
+
+### Storage
+
+One row per swiper in a single `swipe_list` table, composite-keyed on
+`(swiper_id, swiper_kind)` so a talent UUID and a startup UUID can't
+collide. Four JSON arrays store target IDs:
+
+| Column                | Populated for         | Meaning                                |
+|-----------------------|-----------------------|----------------------------------------|
+| `liked_talent_ids`    | talent + startup      | right-swipes on talents                |
+| `passed_talent_ids`   | talent + startup      | left-swipes on talents                 |
+| `liked_startup_ids`   | talent only           | right-swipes on startups               |
+| `passed_startup_ids`  | talent only           | left-swipes on startups                |
+
+The "context" of a swipe (looking for an investor? a mentor?) is **not**
+stored — the target talent's `role_category` already carries that info, and
+the front end groups by it at display time. Three legal swiper/target
+pairs; startups never swipe other startups (rejected with 400):
+
+```
+talent  → talent
+talent  → startup
+startup → talent
+```
+
+ORM:
+[backend/app/model/database/swipe_list.py](backend/app/model/database/swipe_list.py).
+
+### Endpoints
+
+```
+POST   /api/v1/swipe/talent/{swiper_id}/talent/{target_id}    body: {"liked": bool}
+DELETE /api/v1/swipe/talent/{swiper_id}/talent/{target_id}    undo (removes from both lists)
+POST   /api/v1/swipe/talent/{swiper_id}/startup/{target_id}   body: {"liked": bool}
+DELETE /api/v1/swipe/talent/{swiper_id}/startup/{target_id}
+POST   /api/v1/swipe/startup/{swiper_id}/talent/{target_id}   body: {"liked": bool}
+DELETE /api/v1/swipe/startup/{swiper_id}/talent/{target_id}
+
+GET    /api/v1/swipe/talent/{swiper_id}/talents               {matched: [...], passed: [...]}
+GET    /api/v1/swipe/talent/{swiper_id}/startups              {matched: [...], passed: [...]}
+GET    /api/v1/swipe/startup/{swiper_id}/talents              {matched: [...], passed: [...]}
+```
+
+POST is upsert: re-swiping the same target moves the ID between
+`liked_*` and `passed_*` so the lists stay disjoint and there are no
+duplicates. POST returns a small ack with the new list lengths so the
+front end can refresh counters without a refetch. GET hydrates the
+stored IDs into full `TalentResponse` / `StartupResponse` objects so the
+swipe-history view has everything it needs (including `role_category` for
+client-side grouping).
+
+Self-swipe (talent → same talent) and `startup → startup` are rejected
+with 400; missing swiper or target returns 404.
+
+### How the front end uses it
+
+1. The user sets their "looking for" preferences and the discovery filter
+   surfaces a candidate batch.
+2. The front end excludes IDs already present in any of the four lists
+   for that swiper, so already-seen profiles don't show up again.
+3. On each card swipe, the front end POSTs `{liked: true|false}`.
+4. The profile screen shows the two lists by calling the GET endpoints.
+
+### What's deferred
+
+- Mutual-match detection (both sides swiped right) and email notifications.
+- Pagination on the GET list endpoints — fine while lists are small.
+- Concurrent-update safety: JSON arrays are read-modify-write under SQLite,
+  which is OK at hackathon scale but would want row-level locking or a
+  normalized join table at real concurrency.
+
+---
+
 ## Following + network score (PageRank)
 
 Talent can follow other talent or startups. We run **PageRank** over the

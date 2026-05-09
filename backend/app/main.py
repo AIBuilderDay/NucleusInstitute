@@ -25,6 +25,7 @@ from app.api.health import router as health_router
 from app.api.match import router as match_router
 from app.api.onboard import router as onboard_router
 from app.api.startup import router as startup_router
+from app.api.swipe import router as swipe_router
 from app.api.talent import router as talent_router
 from app.core.config import settings
 from app.database.connection import init_db, session_factory
@@ -88,5 +89,6 @@ app.include_router(talent_router, prefix=f"{API_PREFIX}/talent", tags=["talent"]
 app.include_router(startup_router, prefix=f"{API_PREFIX}/startup", tags=["startup"])
 app.include_router(match_router, prefix=f"{API_PREFIX}/match", tags=["match"])
 app.include_router(discovery_router, prefix=f"{API_PREFIX}/discover", tags=["discover"])
+app.include_router(swipe_router, prefix=f"{API_PREFIX}/swipe", tags=["swipe"])
 app.include_router(auth_router, prefix=f"{API_PREFIX}/auth", tags=["auth"])
 app.include_router(onboard_router, prefix=f"{API_PREFIX}/onboard", tags=["onboard"])

@@ -11,6 +11,7 @@ from app.dao.daos.follow_dao import StartupFollowDAO, TalentFollowDAO
 from app.dao.daos.profile_embedding_dao import ProfileEmbeddingDAO
 from app.dao.daos.startup_dao import StartupDAO
 from app.dao.daos.startup_profile_extension_dao import StartupProfileExtensionDAO
+from app.dao.daos.swipe_list_dao import SwipeListDAO
 from app.dao.daos.talent_dao import TalentDAO
 from app.dao.daos.talent_profile_extension_dao import TalentProfileExtensionDAO
 from app.database.connection import get_session
@@ -55,6 +56,11 @@ class DAOFactory:
         if "profile_embedding" not in self._daos:
             self._daos["profile_embedding"] = ProfileEmbeddingDAO(self.session)
         return self._daos["profile_embedding"]  # type: ignore[return-value]
+
+    def get_swipe_list_dao(self) -> SwipeListDAO:
+        if "swipe_list" not in self._daos:
+            self._daos["swipe_list"] = SwipeListDAO(self.session)
+        return self._daos["swipe_list"]  # type: ignore[return-value]
 
     async def commit(self) -> None:
         await self.session.commit()
