@@ -137,6 +137,168 @@ polymorphic `find_talent` with conditional fields.
 
 ---
 
+## Onboarding: "Connect with LinkedIn" → agent-built profile
+
+A second Claude agent owns onboarding. Connect-with-LinkedIn gives us identity
++ email; everything else (experience, skills, sectors, comp expectations) the
+user pastes from their resume / LinkedIn "About + Experience" section. Both
+inputs are handed to Claude with a single MCP tool — `create_talent_profile` —
+that writes the structured row through the same `TalentService.create()` the
+public `POST /talent` route uses.
+
+### Why a paste-box instead of pulling experience straight from LinkedIn
+
+LinkedIn's only self-serve auth product is **Sign In with LinkedIn using
+OpenID Connect**, which gives `openid profile email` scopes — i.e. `sub`
+(LinkedIn ID), name, picture URL, email, locale. **That's it.** The richer
+scopes (`r_basicprofile`, Member Data Portability, etc.) are gated behind
+LinkedIn's Marketing Developer Platform partner review, take 1–4+ weeks to
+process, and routinely get rejected for non-marketing/recruiting use cases.
+
+So the practical move for a hackathon is OIDC for verified identity + a
+resume / experience textbox the user pastes from. Claude parses the paste
+and fills out the structured profile. We get richer data than `r_basicprofile`
+would have given us, with zero app-review wait.
+
+### Endpoint map
+
+```
+GET  /api/v1/auth/linkedin/login        302 to LinkedIn consent screen.
+                                        Sets HMAC-signed state cookie.
+GET  /api/v1/auth/linkedin/callback     LinkedIn redirects here. Backend
+                                        verifies state, exchanges code for
+                                        access token, fetches OIDC userinfo,
+                                        stashes it under a one-shot token,
+                                        302s the browser to the frontend
+                                        with ?linkedin_handoff=<token>.
+GET  /api/v1/auth/linkedin/handoff      Frontend pops the userinfo by token
+                                        (single-use, 5-min TTL).
+POST /api/v1/onboard/agent              Body: { linkedin_userinfo, resume_text? }
+                                        Runs the Claude agent in-process,
+                                        returns the saved Talent + the
+                                        agent's optional acknowledgement.
+```
+
+LinkedIn access tokens are **not persisted** — we use them once to fetch
+userinfo, then drop. The user-table linkage (linkedin_id, etc.) lands in a
+follow-up PR.
+
+### Agent flow
+
+```
+                          ┌──────────────────────────────────┐
+[Frontend] ─POST /onboard/agent {userinfo, resume_text}─▶    │
+                                                             │
+                                                  OnboardService
+                                                             │
+                                ┌────────────────────────────┘
+                                │
+                                ▼
+                build per-request FastMCP server
+                with one tool: create_talent_profile(payload)
+                                │
+                                ▼
+                Claude (Sonnet 4.6) tool-use loop
+                ──────────────────────────────────
+                system: enum vocabulary + extraction rules
+                user:   LinkedIn userinfo + pasted resume text
+                tools:  [create_talent_profile]
+                                │
+                  agent emits one tool_use call
+                                │
+                                ▼
+              MCP tool runs in-process:
+                1. TalentCreate.model_validate(payload)
+                2. talent_dao.get_by_email(...)            ─▶ 409 conflict
+                3. TalentService.create(payload)           ─▶ saved Talent
+                                │
+                                ▼
+              status=created → service returns Talent → 200 OK
+```
+
+The MCP tool calls `TalentService.create()` **in-process** (not via HTTP
+loopback), same pattern as the matching agent. No subprocess, no stdio. The
+DAOFactory the tool uses is the same one FastAPI injected into the request,
+so the transaction stays in one session.
+
+If the agent ever returns a payload that fails Pydantic validation, the tool
+returns `{status: "validation_error", errors: [...]}` and the agent retries
+with the corrections. If the email is already taken, the tool returns
+`{status: "conflict", talent_id: <existing>}` and the agent stops; the
+endpoint surfaces a 409 with the existing talent_id (the schema-changes PR
+will turn this into upsert behavior).
+
+### Setting up LinkedIn OAuth
+
+Walk through this once when you clone the repo.
+
+1. Go to <https://www.linkedin.com/developers/apps> and click **Create app**.
+   Pick a name (`Nucleus Institute`), associate it with a verified LinkedIn
+   **Company Page** you admin (your personal profile won't work — create a
+   free Page first if needed), upload any 100×100 logo, accept the API terms.
+2. After creation, click **Verify** in the yellow banner on the app dashboard
+   to associate the app with the Company Page.
+3. **Products** tab → request access to **Sign In with LinkedIn using OpenID
+   Connect**. This is self-serve and instant. Skip the others — they're gated.
+4. **Auth** tab → **Authorized redirect URLs**: add
+   `http://localhost:8000/api/v1/auth/linkedin/callback` (and a prod URL when
+   you deploy). Must be byte-identical to `LINKEDIN_REDIRECT_URI`.
+5. Copy **Client ID** and **Client Secret** from the same Auth tab.
+6. Generate an HMAC secret for the state cookie:
+   `python -c "import secrets; print(secrets.token_hex(32))"`
+7. Fill these into `backend/.env`:
+   ```
+   LINKEDIN_CLIENT_ID="..."
+   LINKEDIN_CLIENT_SECRET="..."
+   LINKEDIN_REDIRECT_URI="http://localhost:8000/api/v1/auth/linkedin/callback"
+   LINKEDIN_SCOPES="openid profile email"
+   OAUTH_STATE_SECRET="<output of step 6>"
+   FRONTEND_ONBOARD_URL="http://localhost:5173/onboard"
+   ANTHROPIC_API_KEY="..."   # required for the onboarding agent
+   ```
+
+### Smoke-testing the flow
+
+```bash
+# 1. Start the OAuth dance in a browser:
+open http://localhost:8000/api/v1/auth/linkedin/login
+# Approve on LinkedIn → you'll land at FRONTEND_ONBOARD_URL?linkedin_handoff=<token>
+
+# 2. Pop the userinfo (browser request, or curl with the same token):
+curl 'http://localhost:8000/api/v1/auth/linkedin/handoff?token=<token>'
+# → {"sub":"...", "name":"...", "email":"...", "picture":"...", ...}
+
+# 3. Run the agent end-to-end (skip steps 1–2 if you just want to test the agent):
+curl -X POST http://localhost:8000/api/v1/onboard/agent \
+  -H 'content-type: application/json' \
+  -d '{
+    "linkedin_userinfo": {
+      "sub":"abc123",
+      "name":"Jane Doe",
+      "email":"jane@example.com",
+      "email_verified":true,
+      "picture":"https://media.licdn.com/..."
+    },
+    "resume_text": "10 years backend engineering at Stripe and Square. Currently advising 3 Utah fintech startups. Open to fractional CTO roles. Salt Lake City, remote OK."
+  }'
+# → {"talent_id":"<uuid>", "talent": {...full Talent...}, "agent_notes": "Saved Jane's profile..."}
+
+# 4. Confirm the row exists:
+curl http://localhost:8000/api/v1/talent/<talent_id>
+```
+
+### What's deferred
+
+- Persisting the LinkedIn access token, the verified `linkedin_id`, and
+  upsert-by-`linkedin_id` semantics — landing in a follow-up PR with the
+  Talent table changes.
+- Sessions / JWT / `/me` endpoint.
+- Mirror flow for Startup founders (LinkedIn → Startup profile).
+- PDF resume upload (text paste only for now).
+- Replacing the in-process handoff cache with Redis when we go multi-process.
+
+---
+
 ## What the demo does **not** do
 
 - No auth, no sessions, no users.

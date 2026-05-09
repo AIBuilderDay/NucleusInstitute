@@ -66,6 +66,28 @@ class Settings(BaseSettings):
     seed_on_startup: bool = True
 
     # -------------------------------------------------------------------------
+    # LinkedIn OAuth (Sign-In with LinkedIn / OpenID Connect).
+    # Register an app at https://www.linkedin.com/developers/apps and add the
+    # "Sign In with LinkedIn using OpenID Connect" product. The redirect URI
+    # MUST match exactly between LinkedIn console and `linkedin_redirect_uri`.
+    # Rich-profile scopes (positions, education, skills) are gated by the
+    # Marketing Developer Platform; we use OIDC + a resume-paste textbox to
+    # feed the onboarding agent richer data without app-review.
+    # -------------------------------------------------------------------------
+    linkedin_client_id: str = ""
+    linkedin_client_secret: str = ""
+    linkedin_redirect_uri: str = "http://localhost:8000/api/v1/auth/linkedin/callback"
+    linkedin_scopes: str = "openid profile email"
+
+    # HMAC secret for stateless OAuth `state` cookies. Required in non-dev.
+    oauth_state_secret: str = ""
+
+    # Where the OAuth callback redirects the browser after stashing the
+    # userinfo. The frontend reads `?linkedin_handoff=<token>` and calls the
+    # /auth/linkedin/handoff endpoint to retrieve the userinfo JSON.
+    frontend_onboard_url: str = "http://localhost:5173/onboard"
+
+    # -------------------------------------------------------------------------
     # Sentry (optional — wire later, all fields tolerate absence).
     # -------------------------------------------------------------------------
     sentry_dsn: str | None = None
