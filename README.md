@@ -118,6 +118,81 @@ polymorphic `find_talent` with conditional fields.
 
 ---
 
+## Discovery API — "find me X" directory lookups
+
+`/match/*` answers *"who's the best startup for Marcus, with a full breakdown."*
+`/discover/*` answers *"give me the investors / mentors / peer operators / etc.,
+filtered."* Different jobs, different shapes.
+
+Two perspectives × eight targets = **16 endpoints**:
+
+```
+POST /api/v1/discover/from/{talent|startup}/{focal_id}/{target}
+```
+
+where `target` ∈ `operators`, `mentors`, `advisors`, `board_members`,
+`investors`, `service_providers`, `students_interns`, `startups`. Each takes
+a typed filter body (or `{}` for "no filter, just give me the network") and
+`?top_k=20`. Filter shapes mirror the agent's MCP tool signatures and live in
+[backend/app/provider/matching/filters.py](backend/app/provider/matching/filters.py).
+
+```bash
+# Find investors interested in a fundraising life-sciences startup
+curl -X POST http://127.0.0.1:8765/api/v1/discover/from/startup/$SID/investors?top_k=5 \
+  -H 'content-type: application/json' \
+  -d '{"sectors_focused_any":["life_sciences"], "stages_invested_any":["seed"], "utah_only":true}'
+
+# Find mentors a talent could plug into
+curl -X POST http://127.0.0.1:8765/api/v1/discover/from/talent/$TID/mentors?top_k=5 \
+  -H 'content-type: application/json' \
+  -d '{"sectors_of_interest":["life_sciences"]}'
+
+# Find startups currently hiring (from a talent's perspective)
+curl -X POST http://127.0.0.1:8765/api/v1/discover/from/talent/$TID/startups?top_k=5 \
+  -H 'content-type: application/json' \
+  -d '{"seeking":"hiring","stages":["seed","pre_seed"]}'
+
+# Find peer operators (talent → talent)
+curl -X POST http://127.0.0.1:8765/api/v1/discover/from/talent/$TID/operators?top_k=5 \
+  -H 'content-type: application/json' \
+  -d '{"sectors_of_interest":["life_sciences"]}'
+```
+
+Response shape ([backend/app/model/schema/discovery.py](backend/app/model/schema/discovery.py)):
+
+```json
+{
+  "focal_type": "startup",
+  "focal_id": "0e9274ea-…",
+  "target_type": "investors",
+  "matcher": "rule_filter",
+  "results": [
+    {"target": {…full talent…}, "score": 0.45, "top_reason": "Sector overlap: life_sciences"},
+    …
+  ],
+  "total": 5
+}
+```
+
+**Scoring**: when there's a (talent, startup) pair (talent→startup or
+startup→talent), the score comes from the same `RuleFilterMatcher` singleton
+`/match/*` uses — so a candidate's discovery score equals its match score.
+For peer flows (talent→talent, startup→startup) the score is `0.0` and
+results are alphabetical — the network filter has already narrowed; ranking
+is out of scope until a peer-matcher exists.
+
+**Vanilla only.** Discovery is rule_filter only by design — when the caller
+supplies structured filters, the agent's filter-iteration value disappears.
+For agentic narratives, hit `/match/*?matcher=agentic_filter`. See
+[PLAN.md §7a](PLAN.md) for the design rationale.
+
+The MCP server's filter wrappers and the discovery service share the same
+filter primitives in
+[backend/app/provider/matching/filters.py](backend/app/provider/matching/filters.py),
+so rule semantics never drift between the two surfaces.
+
+---
+
 ## Extended profile (deferred-load detail view)
 
 Talent and startup rows on the matching path stay lean. Long-form content

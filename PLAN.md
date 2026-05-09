@@ -525,6 +525,83 @@ backend/app/
 
 ---
 
+## 7a. Discovery API — directory-style "find me X" lookups
+
+Sits alongside `/match/*` and shares the same filter primitives + scoring
+engine. Two different problems, two different endpoint families:
+
+| Concern              | `/match/*`                                      | `/discover/*`                                    |
+|----------------------|-------------------------------------------------|--------------------------------------------------|
+| What it answers      | "Best 5 startups for Marcus" (or vice versa)    | "Find me investors / mentors / peer operators"   |
+| Response shape       | Full `MatchResult` (dimension breakdown, blockers) | Flat list of (target, score, top_reason)      |
+| Use in UI            | Match card with explainable breakdown           | Directory / browse / "Find investors" button     |
+| Matcher selection    | `?matcher=rule_filter` or `agentic_filter`      | Vanilla (rule_filter) only                       |
+| Network narrowing    | All role categories jumbled                     | One network at a time                            |
+
+### URL pattern
+
+```
+POST /api/v1/discover/from/{talent|startup}/{focal_id}/{target}
+```
+
+`target` ∈ {`operators`, `mentors`, `advisors`, `board_members`, `investors`,
+`service_providers`, `students_interns`, `startups`} → 16 endpoints total.
+
+### Per-target filter bodies
+
+Body is a typed Pydantic filter (see `app/provider/matching/filters.py`).
+Empty body / `{}` is allowed — returns the full filtered network.
+
+| Target              | Filter model            | Key fields                                                                         |
+|---------------------|-------------------------|------------------------------------------------------------------------------------|
+| `operators`         | `OperatorFilters`       | sectors_of_interest, role_titles_seeking, skills_any, availability, comp_max_min_usd, location_state, remote_ok, stages |
+| `mentors`           | `MentorFilters`         | sectors_of_interest, mission_keywords_any, location_state, hours_per_week_max     |
+| `advisors`          | `AdvisorFilters`        | domain_expertise_any, sectors_of_interest, equity_acceptable, ventures_advised_count_min |
+| `board_members`     | `BoardMemberFilters`    | prior_titles_any, sectors_of_interest, stages                                      |
+| `investors`         | `InvestorFilters`       | investor_type, typical_check_size, stages_invested_any, sectors_focused_any, utah_only, lead_check |
+| `service_providers` | `ServiceProviderFilters`| service_type, stages_served_any, sectors_served_any, startup_friendly_terms       |
+| `students_interns`  | `StudentInternFilters`  | school, field_of_study, availability, sectors_of_interest                          |
+| `startups`          | `StartupFilters`        | sector, stages, role_categories_open_to_any, seeking, services_needed_any, location_state, mission_keywords_any |
+
+Each request also takes `?top_k=20` (1–100, default 20).
+
+### Scoring rules
+
+- **talent → startup** / **startup → talent** : `_score_pair(t, s)` via the
+  same RuleFilterMatcher singleton `/match/*` uses → ranked by score desc.
+  A candidate's score in `/discover` matches its score in `/match`.
+- **talent → talent** / **startup → startup** : no (talent, startup) pair
+  exists, so we return the network-filtered survivors with `score=0.0`
+  sorted alphabetically. The filter has already narrowed by network — peer
+  ranking is out of scope until a peer-matcher exists.
+
+### Why vanilla only
+
+The agentic_filter's value-add is *navigating filter dimensions* — broadening
+when the first cut is too narrow. For discovery, the user is already supplying
+structured filters via the API, so the iteration value disappears. The agent
+loop would be ~150 LOC to re-implement constrained to a single network type
+when `/match/*?matcher=agentic_filter` already exposes the same agent and the
+caller can post-filter by `talent.role_category` if they need to.
+
+If we ever need agentic discovery: add a `target_type` param to
+`AgenticFilterMatcher` and let the discovery service delegate (PLAN.md §7).
+Don't duplicate the agent loop.
+
+### Implementation map
+
+```
+app/
+├── api/discovery.py                        16 thin route handlers
+├── service/discovery_service.py            orchestration: load focal, filter, score, project
+├── model/schema/discovery.py               TalentDiscoveryResponse, StartupDiscoveryResponse
+└── provider/matching/
+    ├── filters.py                          typed Pydantic filter models + pure filter functions
+    └── (filter primitives shared with mcp/server.py — same rule semantics in both surfaces)
+```
+
+---
+
 ## 8. Open Questions
 
 - [ ] What's the frontend stack and where does it live? (Separate repo? Same monorepo?)
@@ -546,3 +623,4 @@ backend/app/
 - **2026-05-08 phase 2 kickoff** — added procedural synthetic generator (`backend/app/seed/generator.py`, ~330 talents + 120 startups, deterministic `_RNG_SEED=20260508`, emails namespaced under `nucleus-synth.example.com`); wired into `seed_if_empty`. Added root `Taskfile.yml` (4 tasks: `env:generate` / `dev` / `clean` / `clean:all`) and `scripts/generate-env.sh` mirroring the HEAL fastapi-1password-template's enumeration pattern (item title → env var name, `password` field → value, sourced from the `NUCLEUS` vault). Added `ANTHROPIC_API_KEY` to `.env.example` + `core/config.py` ahead of AgenticMatcher work. Fixed wrong `DB_PORT=5432` → `5433` in `.env.example` (matches docker-compose mapping).
 - **2026-05-08 phase 2 agentic-filter design** — locked the AgenticFilterMatcher spec (§7). Decisions: split tool surface into 11 named tools (one per match-flow / Nucleus network) rather than one polymorphic `find_talent`, since investor / service_provider filter dimensions don't overlap with operator dimensions; in-process FastMCP (no subprocess); Sonnet 4.6; score authority stays with rule_filter (agent only curates pool + writes narrative reasons); max 4 tool calls per request; bounded summary projection (30 records max per call) to protect context window; `MatchResult` contract preserved verbatim so the frontend match card and `/compare` work unchanged.
 - **2026-05-08 phase 2 agentic-filter live** — built and smoke-tested AgenticFilterMatcher end-to-end. New files: `app/mcp/__init__.py`, `app/mcp/server.py` (11 tools, in-process FastMCP, ~530 LOC), `app/provider/matching/agentic_filter.py` (Anthropic SDK manual tool loop, ~280 LOC). Deps: `fastmcp>=3.2.4`, `anthropic>=0.100.0`. Hit one circular import (provider.matching.__init__ → agentic_filter → mcp.server → provider.matching.rule_filter); fixed with a deferred local import of `build_mcp_server` inside `_run`. Live verification on 127.0.0.1:8765: `/health` reports `available_matchers: ["agentic_filter", "rule_filter"]`; `/match/talent/{id}?matcher=agentic_filter` returns top-3 in ~16s with rule_filter scores intact and dramatically richer narrative reasons ("Perfect sector match: life_sciences seed-stage startup in Marcus's home city of Salt Lake City" vs rule_filter's "Sector overlap: life_sciences"); reverse direction surfaced an investor for HelixCura via `find_investors` because the agent noticed `seeking_investment=True` — exact agentic-filter behavior we wanted; `/compare` runs both matchers in parallel and shows same top pick + same score from both, with agent supplying the better narrative.
+- **2026-05-09 discovery API live** — added `/api/v1/discover/from/{talent|startup}/{focal_id}/{target}` for all 8 network types from both perspectives (16 endpoints total). Closes the gap where `/match/startup/{id}` returned all role categories jumbled together — frontend can now ask discrete questions like "find investors for HelixCura" or "find peer mentors for Marcus" and get a flat directory-style list with rule_filter score + one-line reason. New files: `app/provider/matching/filters.py` (typed Pydantic filter models + pure filter primitives, ~250 LOC, extracted from the MCP server's inner closures so both surfaces share rule semantics), `app/model/schema/discovery.py` (response shapes), `app/service/discovery_service.py` (orchestrates filter + score + project, vanilla-only, ~150 LOC), `app/api/discovery.py` (16 thin REST handlers). Refactored `app/mcp/server.py` filter wrappers to delegate to the shared primitives — drops ~120 LOC of duplication, MCP `count` tool and `find_*` tools both use the same `filters.filter_*` functions now. Discovery is rule_filter only by design (PLAN.md §2a still applies — agentic flows live on `/match/*?matcher=agentic_filter`); peer-discovery (talent→talent, startup→startup) returns score=0.0 sorted alphabetically since rule_filter has no (talent, startup) pair to score against. Live smoke-test on 127.0.0.1:8765: all 16 endpoints return 200 with sensible content; HelixCura focal correctly surfaces Beatriz Gutierrez as top operator (score 0.67, "Sector overlap: life_sciences"), Mae Hernandez as top mentor (0.83), Sophie Soto as top advisor (0.80), Hassan Ellis as top investor (0.45); existing `/match` rule_filter and agentic_filter both still pass after the MCP refactor.

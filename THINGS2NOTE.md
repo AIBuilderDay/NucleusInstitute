@@ -68,6 +68,17 @@ I wrote `python_sentry_logger_wrapper.get_logger(name=..., log_level=...)` based
 ### `Base` lives in `app/database/connection.py`, not `app/model/database/base.py`
 Mirroring the template. The plan was originally going to put it in `model/database/base.py` but I followed the template layout. Don't add a duplicate `base.py`.
 
+### LinkedIn OAuth → onboarding chain: working, but three gaps for non-first-time flows
+End-to-end verified via curl on 2026-05-09: `/auth/linkedin/login` mints proper authorize URL + signed state cookie, `/handoff` is single-use TTL pop, `/onboard/agent` builds a fully-populated Talent in ~7s (Sonnet 4.6, agent loop). The only step un-curl-able is the human consent on linkedin.com itself.
+
+For the **first-time create-profile-from-LinkedIn** demo path the backend is sufficient. Three real gaps for everything else:
+
+1. **Returning-user sign-in is unimplemented.** Email is the unique key; `/onboard/agent` 409s on the second sign-in with `{talent_id: ...}` but there's no endpoint that maps LinkedIn `sub` → existing Talent. Need a `users` table (or `linkedin_sub` column on Talent) + a `/auth/linkedin/exchange` (or `/me`) before second-sign-in works. The auth.py docstring already flags this.
+2. **`/onboard/agent` trusts whatever `linkedin_userinfo` body the client POSTs.** A determined client could fabricate userinfo and create a profile under any email. To close: have `/onboard/agent` accept the *handoff token* and pop it server-side, OR sign the userinfo on `/handoff` and verify the signature on `/onboard`. Currently the token dies at `/handoff`.
+3. **Handoff cache is in-process only** ([handoff_cache.py:8](backend/app/core/handoff_cache.py#L8)). Multiple uvicorn workers → callback lands on worker A, `/handoff` request lands on worker B → 404. Swap for Redis when going multi-process. Already noted in the file.
+
+Also worth knowing: `LINKEDIN_REDIRECT_URI` must match between `backend/.env` (sourced from 1Password NUCLEUS vault), `Taskfile.yml`'s backend port, AND the LinkedIn developer console's authorized redirect URIs. We hit this once when the vault said `:8000` and Taskfile ran on `:8765` — silent until callback time.
+
 ---
 
 ## Decisions worth knowing later
