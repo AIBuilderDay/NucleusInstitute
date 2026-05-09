@@ -276,6 +276,69 @@ Match responses do **not** include these fields — keeps `/match` cheap and the
 match-card payload predictable. Future agentic / embedding matchers can read
 the extended text directly from the DB without changing the wire contract.
 
+### Unified create — lean + extended + embedding in one POST
+
+`POST /api/v1/talent` and `POST /api/v1/startup` accept the lean profile fields
+*and* an optional `profile_extension` block in a single request. Both rows are
+written in one transaction (no orphans on partial failure) and the
+sentence-transformer vector is pre-computed in a FastAPI `BackgroundTasks` job
+so the response returns fast while the next `/match` call hits a warm cache.
+
+```bash
+curl -X POST http://127.0.0.1:8765/api/v1/talent \
+  -H 'content-type: application/json' \
+  -d '{
+    "name": "Jane Doe",
+    "email": "jane@example.com",
+    "headline": "Fractional CFO — life sciences",
+    "role_category": "executive",
+    "role_titles_seeking": ["cfo"],
+    "availability": "fractional",
+    "comp_expectation_type": "salary_plus_equity",
+    "location_city": "Salt Lake City",
+    "primary_network": "operator",
+    "profile_extension": {
+      "bio_extended": "18 years in life sciences finance...",
+      "image_url": "https://i.pravatar.cc/512?u=jane@example.com",
+      "highlights": ["1x exit", "Took diagnostics co through Series B"],
+      "projects": [{"title": "510(k) pre-sub generator", "description": "..."}]
+    }
+  }'
+# → 201 with both the talent and the saved profile_extension inline.
+#   Background task pre-computes the embedding (~50ms; first run loads the
+#   model, ~1–3s). If the embedding fails, the matcher will lazy-compute on
+#   first /match call — no user impact.
+```
+
+Response shape: [`TalentFullResponse`](backend/app/model/schema/talent.py) /
+[`StartupFullResponse`](backend/app/model/schema/startup.py) — the existing
+`TalentResponse` / `StartupResponse` plus a nullable `profile_extension`.
+Atomic transaction lives in
+[`TalentService.create_with_profile`](backend/app/service/talent_service.py)
+/ [`StartupService.create_with_profile`](backend/app/service/startup_service.py);
+embedding pre-warm helpers in
+[backend/app/provider/matching/embedding.py](backend/app/provider/matching/embedding.py)
+(`prewarm_talent_embedding` / `prewarm_startup_embedding`).
+
+Backwards compatible: callers that omit `profile_extension` keep behaving like
+the old endpoint — `profile_extension` comes back as `null`. The separate
+`PUT /{id}/profile` route is still there for editing the extension after the
+fact.
+
+### Seed data fills it in
+
+The seeder generates a `profile_extension` row for every talent (366) and
+startup (132) on first boot — extended bio synthesized from the lean fields,
+real working image URLs (`i.pravatar.cc`, `dicebear`, `picsum.photos` keyed on
+slug/email), per-entity stable RNG so the same person renders the same
+profile across reboots, and probabilistic optional fields (resume URL, github
+links, cover images at 50–85% fill rates) so the data doesn't look uniform.
+Independent pass: a DB seeded before this feature picks up extensions on the
+next boot. See
+[backend/app/seed/generator.py](backend/app/seed/generator.py)
+(`build_talent_extension` / `build_startup_extension`) and
+[backend/app/seed/utah_synthetic.py](backend/app/seed/utah_synthetic.py).
+
 ---
 
 ## Following + network score (PageRank)

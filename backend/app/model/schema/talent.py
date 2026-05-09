@@ -24,6 +24,10 @@ from app.model.schema.enums import (
     ServiceType,
     Stage,
 )
+from app.model.schema.profile_extension import (
+    TalentProfileExtensionResponse,
+    TalentProfileExtensionUpsert,
+)
 
 
 class Education(BaseModel):
@@ -135,3 +139,19 @@ class TalentResponse(TalentBase):
 class TalentListResponse(BaseModel):
     items: list[TalentResponse]
     total: int
+
+
+class TalentFullCreate(TalentBase):
+    """Lean profile + optional extended profile in one request.
+
+    Used by the unified `POST /talent` endpoint so the frontend can submit
+    the whole profile (and trigger embedding pre-compute) in one round trip.
+    """
+
+    profile_extension: TalentProfileExtensionUpsert | None = None
+
+
+class TalentFullResponse(TalentResponse):
+    """TalentResponse + the extension that was just inserted (if any)."""
+
+    profile_extension: TalentProfileExtensionResponse | None = None

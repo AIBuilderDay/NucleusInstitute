@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 
 from app.model.schema.follow import (
     FollowersResponse,
@@ -13,26 +13,50 @@ from app.model.schema.profile_extension import (
     TalentProfileExtensionResponse,
     TalentProfileExtensionUpsert,
 )
-from app.model.schema.talent import TalentCreate, TalentListResponse, TalentResponse
+from app.model.schema.talent import (
+    TalentFullCreate,
+    TalentFullResponse,
+    TalentListResponse,
+    TalentResponse,
+)
+from app.provider.matching.embedding import prewarm_talent_embedding
 from app.service.network_service import NetworkService
 from app.service.talent_service import TalentService
 
 router = APIRouter()
 
 
-@router.post("", response_model=TalentResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=TalentFullResponse, status_code=status.HTTP_201_CREATED)
 async def create_talent(
-    payload: TalentCreate,
+    payload: TalentFullCreate,
+    background: BackgroundTasks,
     service: TalentService = Depends(TalentService),
-) -> TalentResponse:
+) -> TalentFullResponse:
+    """Create a Talent: lean profile + (optional) extended profile + embedding.
+
+    All three pieces — the matchable row, the "more details" extension, and
+    the sentence-transformer vector — get populated from a single POST. The
+    lean+extension writes happen atomically in one transaction; the embedding
+    pre-compute runs as a background task so the response returns fast. If
+    the embedding fails, the matcher will lazy-compute on first /match call,
+    so the only user-visible effect is a one-time ~50ms slowdown.
+    """
     existing = await service.get_by_email(payload.email)
     if existing is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Talent with email {payload.email} already exists",
         )
-    talent = await service.create(payload)
-    return TalentResponse.model_validate(talent)
+    talent, profile = await service.create_with_profile(payload)
+    background.add_task(prewarm_talent_embedding, talent.id)
+    return TalentFullResponse(
+        **TalentResponse.model_validate(talent).model_dump(),
+        profile_extension=(
+            TalentProfileExtensionResponse.model_validate(profile)
+            if profile is not None
+            else None
+        ),
+    )
 
 
 @router.get("", response_model=TalentListResponse)
