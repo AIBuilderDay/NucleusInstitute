@@ -404,40 +404,42 @@ Final score = weighted sum. Reasons are emitted for each dimension that scored �
 These are explicitly **out of scope** for the current slice but listed so we don't lose them.
 
 ### Matching algorithms (additional providers)
-- [ ] **AgenticFilterMatcher** — Phase 2 active focus. Spec in §7 below.
+- [x] **AgenticFilterMatcher** — shipped (§7). Anthropic SDK + in-process FastMCP, score authority stays with rule_filter.
+- [x] Configurable provider selection — `?matcher=` query param + `/match/.../compare` endpoint expose both matchers in parallel.
 - [ ] **EmbeddingMatcher** — local sentence-transformer model (e.g. `all-MiniLM-L6-v2` via `sentence-transformers`). Embed bio + description + mission, cosine-similarity, blend with rule-filter score.
 - [ ] **HybridMatcher** — RuleFilter prefilter → EmbeddingMatcher rerank → optional LLM rerank top-K.
-- [ ] Configurable provider selection via query param or env var, so the demo can show all three side-by-side.
+- [ ] **Investor / service-provider matcher dimensions** — both role categories currently fall through to default rule_filter weights, which are wrong for them (see THINGS2NOTE). Either route them to dedicated matchers or extend RuleFilter with role-conditional dimension sets.
 
 ### Profile features
+- [x] **LinkedIn URL → profile builder** — full OAuth flow shipped: `/api/v1/auth/linkedin/login` → callback → `/handoff` (single-use TTL token) → `/api/v1/onboard/agent` (Sonnet 4.6 agent loop populates a Talent in ~7s via the onboarding MCP server).
+- [x] **"See more" detail view** — shipped via `TalentProfileExtension` / `StartupProfileExtension` ORM tables + `GET/PUT /api/v1/talent/{id}/profile` and `/api/v1/startup/{id}/profile`. Match payloads stay slim; long-form fields (resume/pitch/references/case studies) load on click.
+- [ ] **Returning-user sign-in** — `/onboard/agent` 409s on second sign-in but no LinkedIn-`sub` → Talent lookup endpoint exists yet. Three remaining gaps documented in THINGS2NOTE.
 - [ ] Voice / chat onboarding ("Catalyst" pitch from brainstorm) — talk for 5 min, agent extracts structured profile.
 - [ ] Reverse-match framing — startups describe a *problem*, candidates describe their *experience*, no resumes/JDs written.
-- [ ] LinkedIn URL → profile builder.
-- [ ] Resume upload → profile builder.
-- [ ] **"See more" detail view (deferred-load extended profile)** — match cards stay slim (the existing `MatchResult` shape), but each profile carries optional long-form fields that a separate `GET /talent/{id}/details` / `GET /startup/{id}/details` endpoint returns when the user clicks "see more" on a match. Storage lives on the existing ORM (`bio`, `description`, plus new `resume_url`, `resume_text`, `pitch_deck_url`, `pitch_text`, `references`, `case_studies`); the seeder + procedural generator should fill these so the demo shows real depth on click. Match-response payloads do **not** include these — keeps `/match` cheap and the frontend match card simple. Future agentic + embedding matchers can read `resume_text` / `pitch_text` directly without changing the wire contract.
+- [ ] Resume upload → profile builder (LinkedIn path covers most cases; raw-resume parsing still TBD).
 
 ### Explainability / UX hooks
-- [ ] **Gap analyzer** — "you're 80% fit, here's what's missing" (computed from sub-1.0 dimensions).
+- [ ] **Gap analyzer** — "you're 80% fit, here's what's missing" (computed from sub-1.0 dimensions; data is already on `MatchResult.dimension_scores`, just needs UI + a tiny synthesis pass).
 - [ ] **Utah trust badges** — U Tech Transfer alum, BYU spinout, USU spinout, Kiln resident, etc. (verified via integration with U/BYU/USU sources, or self-reported with verification flag).
 - [ ] Match card UI contract — finalize JSON shape with frontend team.
 
 ### Utah ecosystem
-- [ ] **Ecosystem mapping / knowledge graph** — people ↔ companies ↔ universities ↔ patents ↔ funding. Shortest-path warm intros.
-- [ ] Pull public data: U of U / BYU / USU spinout lists, Kiln, Lehi corridor companies.
+- [/] **Ecosystem mapping / knowledge graph** — partial. Follow graph (talent→talent, talent→startup) shipped via `TalentFollow` / `StartupFollow` tables + follow/unfollow routes; PageRank service computes scores over both `people_only` and `full_ecosystem` graphs with signature-keyed cache; `/api/v1/talent/{id}/network-score` and `/api/v1/startup/{id}/network-score` expose per-node scores with cohort-relative percentile ranking. Still TODO: shortest-path warm intros, university/patent/funding nodes.
+- [ ] Pull public data: U of U / BYU / USU spinout lists, Kiln, Lehi corridor companies (currently synthetic only).
 
 ### Integrations (per spec, required for production)
 - [ ] **Affinity CRM** sync — webhook out + read sync.
 - [ ] **Squarespace** embed widget for the existing connections hub page.
-- [ ] Replace Typeform with native onboarding flow.
+- [/] Replace Typeform with native onboarding flow — partial. LinkedIn-driven agentic onboarding covers the create-profile flow; a generic non-LinkedIn signup path still TBD.
 
 ### Infra / quality
+- [x] **`Taskfile.yml`** at repo root — `env:generate` (pull from 1Password `NUCLEUS` vault via `scripts/generate-env.sh`), `dev`, `clean`, `clean:all`. All shells use `uv run`.
+- [x] 1Password CLI integration — `task env:generate` enumerates the `NUCLEUS` vault and writes `backend/.env`. (`op inject` template variant still possible but the enumeration pattern is sufficient.)
 - [ ] JWT auth (template has it, we skipped).
-- [ ] Alembic migrations (template has it, we used create_all).
-- [ ] Docker compose for local Postgres + backend.
-- [ ] Real test suite (pytest + httpx async client).
+- [ ] Alembic migrations (template has it, we use `create_all`).
+- [ ] Backend Dockerfile + docker-compose for full stack (Postgres compose already exists from Phase 1; we run on SQLite by default — see §2 layout note).
+- [ ] Real test suite (pytest + httpx async client). `backend/tests/` exists but only contains `__init__.py`.
 - [ ] Seed data from public Utah company lists (not synthetic).
-- [ ] **`Taskfile.yml`** mirroring the template's `task env:generate` pattern. Tasks: `env:generate` (pull from 1Password `NUCLEUS` vault → `.env`), `dev` (run uvicorn with reload), `db:up` / `db:down` (compose Postgres), `db:reset`, `seed`, `test`, `lint`, `format`. All shells use `uv run` under the hood.
-- [ ] 1Password CLI integration — `op inject` template using item refs from the `NUCLEUS` vault. Once added, remove plaintext `.env` from version-control flow entirely.
 
 ---
 
@@ -604,11 +606,11 @@ app/
 
 ## 8. Open Questions
 
-- [ ] What's the frontend stack and where does it live? (Separate repo? Same monorepo?)
-- [ ] Do we have a Postgres instance ready, or do we need docker-compose to spin one up locally?
-- [ ] Do we want the API to expose multiple matchers in parallel for the demo (so judges see "rule says X, embeddings say Y, agent says Z"), or one selectable matcher?
+- [x] **Frontend stack** — Vite + React + TypeScript, same monorepo (`frontend/` next to `backend/`).
+- [x] **Postgres** — moved off it. Phase 2 swapped to SQLite (`backend/data/nucleus.db`, async via `aiosqlite`); the docker-compose Postgres setup still works if we need to swap back (see §2 layout note).
+- [x] **Multiple matchers in parallel** — yes. `?matcher=` selects, `/match/.../compare` runs all registered matchers and returns side-by-side results.
+- [x] **Auth for the hackathon** — LinkedIn OAuth shipped for first-time profile creation; no JWT/session for ongoing API calls. Returning-user sign-in is the next gap (see §6).
 - [ ] Are there real Affinity CRM credentials available for the demo, or should integration be stubbed?
-- [ ] Do we need user accounts at all for the hackathon demo, or are profiles unauthenticated?
 
 ---
 
@@ -623,4 +625,7 @@ app/
 - **2026-05-08 phase 2 kickoff** — added procedural synthetic generator (`backend/app/seed/generator.py`, ~330 talents + 120 startups, deterministic `_RNG_SEED=20260508`, emails namespaced under `nucleus-synth.example.com`); wired into `seed_if_empty`. Added root `Taskfile.yml` (4 tasks: `env:generate` / `dev` / `clean` / `clean:all`) and `scripts/generate-env.sh` mirroring the HEAL fastapi-1password-template's enumeration pattern (item title → env var name, `password` field → value, sourced from the `NUCLEUS` vault). Added `ANTHROPIC_API_KEY` to `.env.example` + `core/config.py` ahead of AgenticMatcher work. Fixed wrong `DB_PORT=5432` → `5433` in `.env.example` (matches docker-compose mapping).
 - **2026-05-08 phase 2 agentic-filter design** — locked the AgenticFilterMatcher spec (§7). Decisions: split tool surface into 11 named tools (one per match-flow / Nucleus network) rather than one polymorphic `find_talent`, since investor / service_provider filter dimensions don't overlap with operator dimensions; in-process FastMCP (no subprocess); Sonnet 4.6; score authority stays with rule_filter (agent only curates pool + writes narrative reasons); max 4 tool calls per request; bounded summary projection (30 records max per call) to protect context window; `MatchResult` contract preserved verbatim so the frontend match card and `/compare` work unchanged.
 - **2026-05-08 phase 2 agentic-filter live** — built and smoke-tested AgenticFilterMatcher end-to-end. New files: `app/mcp/__init__.py`, `app/mcp/server.py` (11 tools, in-process FastMCP, ~530 LOC), `app/provider/matching/agentic_filter.py` (Anthropic SDK manual tool loop, ~280 LOC). Deps: `fastmcp>=3.2.4`, `anthropic>=0.100.0`. Hit one circular import (provider.matching.__init__ → agentic_filter → mcp.server → provider.matching.rule_filter); fixed with a deferred local import of `build_mcp_server` inside `_run`. Live verification on 127.0.0.1:8765: `/health` reports `available_matchers: ["agentic_filter", "rule_filter"]`; `/match/talent/{id}?matcher=agentic_filter` returns top-3 in ~16s with rule_filter scores intact and dramatically richer narrative reasons ("Perfect sector match: life_sciences seed-stage startup in Marcus's home city of Salt Lake City" vs rule_filter's "Sector overlap: life_sciences"); reverse direction surfaced an investor for HelixCura via `find_investors` because the agent noticed `seeking_investment=True` — exact agentic-filter behavior we wanted; `/compare` runs both matchers in parallel and shows same top pick + same score from both, with agent supplying the better narrative.
+- **2026-05-09 extended profile tables** — split long-form fields off the core Talent/Startup ORM into `TalentProfileExtension` / `StartupProfileExtension` (one-to-one, lazy-loaded). Resume URL/text, pitch deck URL/text, references, case studies, plus a free-form `notes` JSON column. Endpoints: `GET/PUT /api/v1/talent/{id}/profile` and `GET/PUT /api/v1/startup/{id}/profile`. `/match` payloads stay slim — long-form data only travels when the user clicks "see more". Generator + seeder fill these so the demo shows real depth on click.
+- **2026-05-09 LinkedIn OAuth + agentic onboarding live** — full create-profile-from-LinkedIn flow shipped end-to-end. `app/core/linkedin_oauth.py` (PKCE + signed state cookie), `app/core/oauth_state.py`, `app/core/handoff_cache.py` (in-process single-use TTL token), `app/api/auth.py` (`/auth/linkedin/login`, `/callback`, `/handoff`), `app/api/onboard.py` (`/onboard/agent`), `app/service/onboard_service.py`, `app/mcp/onboard_server.py` (MCP tools the onboarding agent uses to populate a Talent). Agent runs Sonnet 4.6, takes ~7s to build a fully-populated Talent from LinkedIn userinfo + headline. Three known gaps captured in THINGS2NOTE: returning-user sign-in (no `linkedin_sub` → Talent lookup yet), client-trusts-userinfo on `/onboard/agent`, and in-process handoff cache breaks on multi-worker deploys.
+- **2026-05-09 follow graph + PageRank + network-score** — added directed follow graph: `TalentFollow` (talent → talent) and `StartupFollow` (talent → startup), DAOs with edge-listing methods, follow/unfollow routes on talent (`/api/v1/talent/{id}/follow/{talent|startup}/{target_id}`, `/following`, `/followers`), follower listing on startup. `app/service/pagerank_service.py` computes PageRank over two graphs — `people_only` (talent nodes only) and `full_ecosystem` (talent + startup) — via dense numpy power iteration with dangling-node redistribution (BYU ACME formulation, d=0.85, 100 iter cap, 1e-7 tol). Cache keyed on `(talent_count, startup_count, talent_edge_count, startup_edge_count)` so any mutation invalidates automatically; `asyncio.Lock` guards first-caller recompute. `/api/v1/talent/{id}/network-score` and `/api/v1/startup/{id}/network-score` return both graph scores plus cohort-relative percentile bucketing via `network_service.py`. Powers the future "warm intro" / "well-connected operators" surfaces and gives the discovery cards a credibility signal beyond rule_filter score.
 - **2026-05-09 discovery API live** — added `/api/v1/discover/from/{talent|startup}/{focal_id}/{target}` for all 8 network types from both perspectives (16 endpoints total). Closes the gap where `/match/startup/{id}` returned all role categories jumbled together — frontend can now ask discrete questions like "find investors for HelixCura" or "find peer mentors for Marcus" and get a flat directory-style list with rule_filter score + one-line reason. New files: `app/provider/matching/filters.py` (typed Pydantic filter models + pure filter primitives, ~250 LOC, extracted from the MCP server's inner closures so both surfaces share rule semantics), `app/model/schema/discovery.py` (response shapes), `app/service/discovery_service.py` (orchestrates filter + score + project, vanilla-only, ~150 LOC), `app/api/discovery.py` (16 thin REST handlers). Refactored `app/mcp/server.py` filter wrappers to delegate to the shared primitives — drops ~120 LOC of duplication, MCP `count` tool and `find_*` tools both use the same `filters.filter_*` functions now. Discovery is rule_filter only by design (PLAN.md §2a still applies — agentic flows live on `/match/*?matcher=agentic_filter`); peer-discovery (talent→talent, startup→startup) returns score=0.0 sorted alphabetically since rule_filter has no (talent, startup) pair to score against. Live smoke-test on 127.0.0.1:8765: all 16 endpoints return 200 with sensible content; HelixCura focal correctly surfaces Beatriz Gutierrez as top operator (score 0.67, "Sector overlap: life_sciences"), Mae Hernandez as top mentor (0.83), Sophie Soto as top advisor (0.80), Hassan Ellis as top investor (0.45); existing `/match` rule_filter and agentic_filter both still pass after the MCP refactor.
