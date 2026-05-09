@@ -16,10 +16,24 @@ async def onboard_agent(
     payload: OnboardAgentRequest,
     service: OnboardService = Depends(OnboardService),
 ) -> OnboardAgentResponse:
-    """Single-shot: feed LinkedIn userinfo + optional resume to Claude, return saved Talent."""
-    talent, agent_notes = await service.create_talent_from_linkedin(
-        linkedin_userinfo=payload.linkedin_userinfo,
+    """Single-shot: feed OIDC userinfo + optional resume to Claude, return saved Talent.
+
+    `OnboardAgentRequest` enforces that exactly one of `linkedin_userinfo` or
+    `google_userinfo` is set; we forward whichever is present along with the
+    provider label so the agent prompt can reference the right source.
+    """
+    if payload.linkedin_userinfo is not None:
+        userinfo = payload.linkedin_userinfo
+        provider = "linkedin"
+    else:
+        assert payload.google_userinfo is not None  # guaranteed by validator
+        userinfo = payload.google_userinfo
+        provider = "google"
+
+    talent, agent_notes = await service.create_talent_from_oidc(
+        userinfo=userinfo,
         resume_text=payload.resume_text,
+        provider=provider,
     )
     return OnboardAgentResponse(
         talent_id=talent.id,

@@ -1,11 +1,11 @@
-"""Pydantic schemas for the LinkedIn OAuth + onboarding flow."""
+"""Pydantic schemas for the OAuth + onboarding flow (LinkedIn + Google)."""
 
 from __future__ import annotations
 
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from app.model.schema.talent import TalentResponse
 
@@ -35,16 +35,55 @@ class LinkedInHandoffResponse(LinkedInUserInfo):
     pass
 
 
+class GoogleUserInfo(BaseModel):
+    """OIDC userinfo blob returned from https://openidconnect.googleapis.com/v1/userinfo.
+
+    Field set is the OIDC standard claims; same wire shape as `LinkedInUserInfo`
+    but kept as its own type so the onboarding agent can know which provider
+    the data came from. `locale` is normally a string from Google but typed as
+    Any to match the LinkedIn schema and tolerate any future shape changes.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    sub: str
+    name: str | None = None
+    given_name: str | None = None
+    family_name: str | None = None
+    picture: str | None = None
+    email: EmailStr | None = None
+    email_verified: bool = False
+    locale: Any = None
+
+
+class GoogleHandoffResponse(GoogleUserInfo):
+    """Returned by GET /auth/google/handoff. Same shape as userinfo."""
+
+    pass
+
+
 class OnboardAgentRequest(BaseModel):
     """Body for POST /onboard/agent.
 
-    `linkedin_userinfo` should be the dict the frontend pulled from
-    /auth/linkedin/handoff. `resume_text` is the optional paste-box contents
-    the agent uses to fill out experience, education, skills, etc.
+    Exactly one of `linkedin_userinfo` or `google_userinfo` must be present —
+    whichever provider the user signed in with. The frontend pulls the dict
+    from the matching `/auth/<provider>/handoff` endpoint and forwards it here.
+    `resume_text` is the optional paste-box / extracted-PDF contents the agent
+    uses to fill out experience, education, skills, etc.
     """
 
-    linkedin_userinfo: LinkedInUserInfo
+    linkedin_userinfo: LinkedInUserInfo | None = None
+    google_userinfo: GoogleUserInfo | None = None
     resume_text: str | None = Field(default=None, max_length=50_000)
+
+    @model_validator(mode="after")
+    def _exactly_one_userinfo(self) -> "OnboardAgentRequest":
+        provided = [self.linkedin_userinfo is not None, self.google_userinfo is not None]
+        if sum(provided) != 1:
+            raise ValueError(
+                "Exactly one of `linkedin_userinfo` or `google_userinfo` must be provided"
+            )
+        return self
 
 
 class OnboardAgentResponse(BaseModel):
