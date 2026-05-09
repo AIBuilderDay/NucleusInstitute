@@ -16,8 +16,8 @@ export function FilterRow<V extends string>({
   onToggle,
 }: FilterRowProps<V>) {
   return (
-    <div className="flex items-center gap-12 flex-wrap">
-      <span className="tiny-caps min-w-64">
+    <div className="flex flex-col gap-8">
+      <span className="tiny-caps">
         {label}
       </span>
       <div className="flex flex-wrap gap-6">
