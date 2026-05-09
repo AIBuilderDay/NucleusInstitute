@@ -13,8 +13,10 @@
 import { API_BASE_URL, API_PREFIX } from "./config";
 import type {
   CompareResponse,
+  GoogleUserInfo,
   MatchResponse,
   MatchResult,
+  OnboardAgentResponse,
   Person,
   PingResult,
   Sector,
@@ -119,6 +121,22 @@ export const api = {
     });
   },
 
+  async googleHandoff(token: string): Promise<GoogleUserInfo> {
+    return await request<GoogleUserInfo>(
+      `${API_PREFIX}/auth/google/handoff?token=${encodeURIComponent(token)}`,
+    );
+  },
+
+  async onboardAgent(payload: {
+    google_userinfo: GoogleUserInfo;
+    resume_text?: string;
+  }): Promise<OnboardAgentResponse> {
+    return await request<OnboardAgentResponse>(`${API_PREFIX}/onboard/agent`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
   async matchPerson(
     personId: string,
     opts: { topK?: number; sectorFilter?: Sector[]; matcher?: string } = {},
@@ -135,11 +153,12 @@ export const api = {
 
   async matchStartup(
     startupId: string,
-    opts: { topK?: number; matcher?: string } = {},
+    opts: { topK?: number; matcher?: string; roles?: string[] } = {},
   ): Promise<MatchResponse> {
-    const { topK = 10, matcher } = opts;
+    const { topK = 10, matcher, roles } = opts;
     const qs = new URLSearchParams({ top_k: String(topK) });
     if (matcher) qs.set("matcher", matcher);
+    if (roles?.length) for (const r of roles) qs.append("roles", r);
     const r = await request<StartupMatchResponse>(
       `${API_PREFIX}/match/startup/${startupId}?${qs.toString()}`,
       { method: "POST" },

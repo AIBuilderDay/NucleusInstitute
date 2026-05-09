@@ -177,6 +177,28 @@ export interface ConnectionEdge {
   warmth: number;
 }
 
+// Mirrors backend GoogleUserInfo / GoogleHandoffResponse.
+export interface GoogleUserInfo {
+  sub: string;
+  name?: string | null;
+  given_name?: string | null;
+  family_name?: string | null;
+  picture?: string | null;
+  email?: string | null;
+  email_verified?: boolean;
+  locale?: unknown;
+}
+
+// Mirrors backend OnboardAgentResponse.
+export interface OnboardAgentResponse {
+  talent_id: string;
+  talent: Person;
+  agent_notes: string | null;
+  confidence: number | null;
+  reasoning_bullets: string[];
+  agent_raw_response: string | null;
+}
+
 export interface PingResult {
   live: boolean;
   info?: unknown;

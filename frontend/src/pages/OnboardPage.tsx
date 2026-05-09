@@ -2,6 +2,7 @@ import { useState } from "react";
 import type {
   Availability,
   CompExpectation,
+  GoogleUserInfo,
   Network,
   Person,
   RiskTolerance,
@@ -25,6 +26,7 @@ import { Field, selectClass } from "../components/ui";
 
 interface OnboardPageProps {
   onComplete: (profile: Person) => void;
+  googleUserinfo?: GoogleUserInfo | null;
 }
 
 interface Draft {
@@ -61,9 +63,17 @@ const DEFAULT_DRAFT: Draft = {
   bio: "",
 };
 
-export function OnboardPage({ onComplete }: OnboardPageProps) {
-  const [step, setStep] = useState(0);
-  const [draft, setDraft] = useState<Draft>(DEFAULT_DRAFT);
+export function OnboardPage({ onComplete, googleUserinfo }: OnboardPageProps) {
+  const startStep = googleUserinfo ? -1 : 0;
+  const [step, setStep] = useState(startStep);
+  const [draft, setDraft] = useState<Draft>(() => {
+    if (!googleUserinfo) return DEFAULT_DRAFT;
+    return {
+      ...DEFAULT_DRAFT,
+      name: googleUserinfo.name ?? "",
+      email: googleUserinfo.email ?? "",
+    };
+  });
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -108,17 +118,50 @@ export function OnboardPage({ onComplete }: OnboardPageProps) {
     }
   };
 
+  const totalSteps = googleUserinfo ? 3 : 2;
+  const stepIndexForBar = googleUserinfo ? step + 1 : step;
+
   return (
     <div>
       <div className="max-w-[880px] mx-auto pt-32 px-32 pb-64">
         <div className="flex gap-6 mb-24">
-          {[0, 1].map((i) => (
+          {Array.from({ length: totalSteps }).map((_, i) => (
             <div
               key={i}
-              className={`flex-1 h-4 rounded-[2px] ${i <= step ? "bg-gold" : "bg-pearl-200"}`}
+              className={`flex-1 h-4 rounded-[2px] ${i <= stepIndexForBar ? "bg-gold" : "bg-pearl-200"}`}
             />
           ))}
         </div>
+
+        {step === -1 && googleUserinfo && (
+          <ResumeAgentStep
+            googleUserinfo={googleUserinfo}
+            onAgentResult={(person) => {
+              setDraft((prev: Draft) => ({
+                ...prev,
+                name: person.name ?? prev.name,
+                email: person.email ?? prev.email,
+                headline: person.headline ?? prev.headline,
+                role_category: person.role_category ?? prev.role_category,
+                availability: person.availability ?? prev.availability,
+                primary_network: person.primary_network ?? prev.primary_network,
+                sectors_of_interest:
+                  person.sectors_of_interest ?? prev.sectors_of_interest,
+                skills: person.skills ?? prev.skills,
+                mission_keywords: person.mission_keywords ?? prev.mission_keywords,
+                location_city: person.location_city ?? prev.location_city,
+                comp_expectation_type:
+                  person.comp_expectation_type ?? prev.comp_expectation_type,
+                comp_min_salary_usd:
+                  person.comp_min_salary_usd ?? prev.comp_min_salary_usd,
+                risk_tolerance: person.risk_tolerance ?? prev.risk_tolerance,
+                bio: person.bio ?? prev.bio,
+              }));
+              setStep(0);
+            }}
+            onSkip={() => setStep(0)}
+          />
+        )}
 
         {step === 0 && (
           <ConfirmProfileStep
@@ -138,6 +181,97 @@ export function OnboardPage({ onComplete }: OnboardPageProps) {
             error={submitError}
           />
         )}
+      </div>
+    </div>
+  );
+}
+
+interface ResumeAgentStepProps {
+  googleUserinfo: GoogleUserInfo;
+  onAgentResult: (person: Person) => void;
+  onSkip: () => void;
+}
+
+function ResumeAgentStep({ googleUserinfo, onAgentResult, onSkip }: ResumeAgentStepProps) {
+  const [resumeText, setResumeText] = useState("");
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const generate = async () => {
+    setRunning(true);
+    setError(null);
+    try {
+      const res = await api.onboardAgent({
+        google_userinfo: googleUserinfo,
+        resume_text: resumeText.trim() || undefined,
+      });
+      onAgentResult(res.talent);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="card p-28">
+      <div className="flex items-center gap-12 mb-18">
+        {googleUserinfo.picture && (
+          <img
+            src={googleUserinfo.picture}
+            alt=""
+            className="w-40 h-40 rounded-full"
+          />
+        )}
+        <div>
+          <h2 className="font-display text-[24px] text-nucleus-blue mb-2">
+            Welcome{googleUserinfo.given_name ? `, ${googleUserinfo.given_name}` : ""}.
+          </h2>
+          <p className="text-graphite-muted text-[13px] m-0">
+            Signed in as {googleUserinfo.email ?? googleUserinfo.name ?? "Google user"}.
+          </p>
+        </div>
+      </div>
+
+      <p className="text-graphite text-[14px] mb-14">
+        Paste your resume (or LinkedIn export, or any bio prose) below. The Nucleus
+        agent will extract your role, sectors, skills, and preferences — you can
+        edit anything on the next screen.
+      </p>
+
+      <Field label="Resume / bio (paste here)">
+        <textarea
+          rows={14}
+          className={`${selectClass} font-[inherit] resize-y`}
+          placeholder="Paste resume text, LinkedIn About section, or any prose describing your experience…"
+          value={resumeText}
+          onChange={(e) => setResumeText(e.target.value)}
+          disabled={running}
+        />
+      </Field>
+
+      {error && (
+        <div className="mt-14 py-10 px-14 bg-[#fbe8e0] rounded-[8px] text-[#8a3a3a] text-[13px]">
+          ⚠ {error}
+        </div>
+      )}
+
+      <div className="flex gap-10 mt-18 items-center">
+        <button
+          className="btn btn-ghost"
+          onClick={onSkip}
+          disabled={running}
+        >
+          Skip — fill manually
+        </button>
+        <div className="flex-1" />
+        <button
+          className="btn btn-primary"
+          onClick={generate}
+          disabled={running}
+        >
+          {running ? "Building profile…" : "Build my profile →"}
+        </button>
       </div>
     </div>
   );

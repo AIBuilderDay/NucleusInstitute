@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Person, PingResult, Startup } from "./types";
+import type { GoogleUserInfo, Person, PingResult, Startup } from "./types";
 import { api } from "./api";
 import type { Route } from "./routeHero";
 import { SideNav } from "./components/SideNav";
@@ -110,6 +110,7 @@ export function App() {
     setOidcUserState(u);
     persistOidcUser(u);
   };
+  const [googleUserinfo, setGoogleUserinfo] = useState<GoogleUserInfo | null>(null);
 
   useEffect(() => {
     let dead = false;
@@ -130,6 +131,24 @@ export function App() {
         setPeople(ps);
         setStartups(ss);
         setCurrentUser(ps[1] ?? ps[0] ?? null);
+
+        const params = new URLSearchParams(window.location.search);
+        const googleToken = params.get("google_handoff");
+        if (googleToken) {
+          window.history.replaceState({}, "", window.location.pathname);
+          try {
+            const info = await api.googleHandoff(googleToken);
+            if (dead) return;
+            setGoogleUserinfo(info);
+            setRoute("onboard");
+          } catch (e) {
+            if (!dead) {
+              setLoadError(
+                `Google sign-in handoff failed: ${e instanceof Error ? e.message : String(e)}`,
+              );
+            }
+          }
+        }
       } catch (e) {
         if (!dead) setLoadError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -251,10 +270,12 @@ export function App() {
             )}
             {route === "onboard" && (
               <OnboardPage
+                googleUserinfo={googleUserinfo}
                 onComplete={async (created) => {
                   const refreshed = await reloadPeople();
                   const next = refreshed.find((p) => p.id === created.id) ?? created;
                   setCurrentUser(next);
+                  setGoogleUserinfo(null);
                   setRoute("profile");
                 }}
               />
