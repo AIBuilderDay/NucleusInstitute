@@ -41,7 +41,10 @@ We're now on SQLite (`backend/data/nucleus.db`, `aiosqlite` driver). Things to k
 - **`task clean:all` deletes the DB file.** It's gone — no volume to detach. Generator re-runs on next `task dev`.
 
 ### Matcher registry instantiates eagerly
-`@register_matcher` calls `cls()` at import time of `app.provider.matching` — fine for `RuleFilterMatcher` because it's stateless. When we add the embedding matcher, **lazy-load the model weights inside `match_*` methods**, not in `__init__`. Otherwise app startup gets slow and tests that import the package pay the cost too.
+`@register_matcher` calls `cls()` at import time of `app.provider.matching`. `RuleFilterMatcher` and the agentic / embedding matchers all stay cheap to construct — the agentic matcher defers `AsyncAnthropic(...)` to first request, the embedding engine defers `SentenceTransformer(...)` the same way. **If you add a matcher that loads heavy weights or opens connections, defer it to the first match call.** Otherwise app startup pays the cost and so does every test that imports the package.
+
+### Embedding cache invalidation hinges on the source signature
+`profile_embedding.source_signature` is a sha256 of the *constructed embedding text* — name, headline, skills, sectors, mission, bio, plus the extension fields the engine splices in. If you change `EmbeddingEngine.talent_text` / `startup_text` (e.g. add a new field to the chunk), every existing row in `profile_embedding` is suddenly stale because the freshly-hashed text won't match. The matcher will quietly re-encode each profile on first read — that's the right behavior, but it means a deploy that touches the text builders pays the encode cost again. If you ever want to avoid that, `task clean:all` deletes the DB; otherwise just let the lazy refill happen.
 
 ### Hard-filter score collapse is intentional
 When hard filters fail, the surface `score` collapses to `0.0` but `dimension_scores` is still computed and returned. This is deliberate — the gap-analyzer / "you're 80% fit" UI can show *what would unblock the match*. Don't strip the breakdown when blockers exist.

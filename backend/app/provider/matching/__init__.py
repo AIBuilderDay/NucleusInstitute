@@ -7,6 +7,7 @@ requests arrive.
 """
 
 from app.provider.matching import agentic_filter as _agentic_filter  # noqa: F401  (registers AgenticFilterMatcher)
+from app.provider.matching import embedding as _embedding  # noqa: F401  (registers EmbeddingMatcher + EmbeddingBlendedMatcher)
 from app.provider.matching import rule_filter as _rule_filter  # noqa: F401  (registers RuleFilterMatcher)
 from app.provider.matching.base import (
     MatchingProvider,

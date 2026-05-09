@@ -116,6 +116,67 @@ The 11 tools: `find_operators`, `find_mentors`, `find_advisors`,
 `count` — split by filter schema (one tool per match-flow), not one
 polymorphic `find_talent` with conditional fields.
 
+### `embedding` and `embedding_blended`
+
+Two semantic matchers backed by `sentence-transformers/all-MiniLM-L6-v2` —
+a 22M-parameter open-source model (Apache 2.0) that runs locally on CPU
+or Apple Silicon GPU, no API calls, no rate limits.
+
+**What gets embedded.** For each talent and startup we build one chunk of
+text from the structured profile (headline, role, sectors, skills, mission,
+bio for talent; one-liner, sector, required skills, mission, description
+for startup) and splice in any long-form fields from `*_profile_extension`
+when present (extended bio, highlights, resume-style detail, project
+descriptions). The model produces a 384-dim unit-normalized vector;
+similarity is plain cosine.
+
+**Two score formulas, same hard filters.** Both run rule_filter
+underneath for hard filters (availability, role, comp, location) and to
+populate the dimension breakdown the match card already renders. They
+diverge in how they compute the surfaced score:
+
+| Matcher              | Score                                       |
+|----------------------|---------------------------------------------|
+| `embedding`          | clamped cosine similarity                   |
+| `embedding_blended`  | `0.6 * cosine + 0.4 * rule_filter_score`    |
+
+When cosine ≥ 0.55, both inject a leading `"Strong semantic alignment
+(cosine 0.XX)"` reason; the rest are rule_filter's reasons unchanged.
+
+**Why two?** They surface different things:
+
+- **`rule_filter`** rewards explicit structured overlap — same sector
+  enum, salary band fits, location compatible.
+- **`embedding`** rewards *how people describe themselves and their work*.
+  A Salt Lake fintech operator whose bio mentions "regulatory compliance,
+  bank charters, and stablecoin treasury" can match a startup whose
+  description talks about "money-movement infrastructure" even when the
+  skill enums don't quite line up. Useful when the structured taxonomy
+  hasn't caught up to how the field actually talks.
+- **`embedding_blended`** is the practical default for ranking — the cosine
+  signal lifts well-described matches but rule_filter still tilts the
+  ordering toward candidates whose structured fields actually fit.
+
+`/match/.../compare` runs all four matchers in parallel so judges can see
+the spread on the same input.
+
+**Caching.** Embedding the corpus is the slow step (~10s for ~500 profiles
+on first run). Vectors are persisted to a `profile_embedding` table keyed
+on `(entity_type, entity_id, model_name)` with a `source_signature` (sha256
+of the constructed text). On read, the matcher hashes the freshly-built
+text and reuses the stored vector if the signature matches; otherwise it
+re-encodes and upserts. Edit a bio, the next match call notices and
+re-encodes that one row — everything else stays cached. After the first
+run, `/match/...?matcher=embedding*` returns in single-digit milliseconds.
+
+The model loads lazily on the first match call (not at app boot) so
+imports stay fast and tests don't pay the load cost. `model.encode(...)`
+is sync + CPU-bound, so it runs in `asyncio.to_thread` to keep `/compare`
+non-blocking. Implementation:
+[backend/app/provider/matching/embedding.py](backend/app/provider/matching/embedding.py),
+table:
+[backend/app/model/database/profile_embedding.py](backend/app/model/database/profile_embedding.py).
+
 ---
 
 ## Discovery API — "find me X" directory lookups
