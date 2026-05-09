@@ -715,6 +715,61 @@ def _gen_service_provider(rng: random.Random, idx: int) -> dict[str, Any]:
     }
 
 
+def _gen_educator(rng: random.Random, idx: int) -> dict[str, Any]:
+    sector = rng.choice(SECTORS)
+    school = rng.choice(UNIVERSITIES)
+    field_by_sector = {
+        "life_sciences": "Bioengineering",
+        "ai": "Computer Science",
+        "defense_aerospace": "Aerospace Engineering",
+        "cyber": "Computer Science",
+        "energy": "Mechanical Engineering",
+        "advanced_manufacturing": "Mechanical Engineering",
+        "fintech": "Finance",
+        "software": "Computer Science",
+    }
+    field = field_by_sector.get(sector, "Computer Science")
+    rank = rng.choices(
+        ["Professor", "Associate Professor", "Assistant Professor", "Lecturer", "Research Faculty"],
+        weights=[3, 3, 3, 1, 2],
+    )[0]
+    first = rng.choice(FIRST_NAMES)
+    last = rng.choice(LAST_NAMES)
+    city, metro = _pick_city(rng)
+    skills = _pick_skills(rng, [sector], [], 3, 6) + ["research", "tech transfer"]
+    return {
+        "name": f"{first} {last}, PhD",
+        "email": _make_email(rng, first, last, idx),
+        "headline": f"{rank} of {field} — {school}",
+        "role_category": "educator",
+        "role_titles_seeking": ["other"],
+        "availability": "advisory",
+        "hours_per_week_min": 1,
+        "hours_per_week_max": 4,
+        "skills": skills,
+        "sectors_of_interest": [sector],
+        "stage_preference": rng.choice([["idea", "pre_seed"], ["pre_seed", "seed"], ["idea", "pre_seed", "seed"]]),
+        "years_experience": rng.randint(8, 30),
+        "education": [{
+            "school": school,
+            "degree": "PhD",
+            "field": field,
+            "graduation_year": rng.randint(1995, 2018),
+        }],
+        "comp_expectation_type": "free",
+        "location_city": city,
+        "location_state": "UT",
+        "location_metro": metro,
+        "remote_ok": True,
+        "mission_keywords": _pick_missions(rng, [sector], 1, 2) + ["tech transfer", "academic-startup bridge"],
+        "risk_tolerance": "medium",
+        # Educators default to the mentor network (informal, free); the
+        # onboarding agent escalates to sme_advisor for formal equity engagements.
+        "primary_network": "mentor",
+        "university_affiliations": [school],
+    }
+
+
 # ---------- Startup generator ----------
 
 
@@ -747,7 +802,7 @@ def _gen_startup(rng: random.Random, idx: int) -> dict[str, Any]:
     roles_pool = ["ceo", "cto", "coo", "cfo", "engineer", "sales", "marketing", "biz_dev", "regulatory", "product", "design", "cofounder"]
     roles_needed = rng.sample(roles_pool, rng.randint(2, 4))
 
-    open_to_pool = ["executive", "operator", "advisor", "board_member", "mentor", "investor", "service_provider"]
+    open_to_pool = ["executive", "operator", "advisor", "board_member", "mentor", "investor", "service_provider", "educator"]
     role_categories_open_to = rng.sample(open_to_pool, rng.randint(3, 5))
 
     avail_pool = ["full_time", "part_time", "fractional", "advisory", "internship"]
@@ -874,6 +929,7 @@ def build_synthetic_batch(
     n_mentors: int = 25,
     n_investors: int = 25,
     n_service_providers: int = 22,
+    n_educators: int = 18,
     n_startups: int = 120,
 ) -> dict[str, list[dict[str, Any]]]:
     """Generate a deterministic batch of synthetic talents and startups.
@@ -895,6 +951,7 @@ def build_synthetic_batch(
         (n_mentors, _gen_mentor),
         (n_investors, _gen_investor),
         (n_service_providers, _gen_service_provider),
+        (n_educators, _gen_educator),
     ]
 
     idx = 0
@@ -959,6 +1016,22 @@ _ROLE_FOLLOW_AFFINITY: dict[tuple[str, str], float] = {
     ("service_provider", "executive"): 2.0,
     ("service_provider", "investor"): 2.5,
     ("service_provider", "service_provider"): 1.5,
+    # Educators bridge academia and industry: students follow their professors,
+    # founders connect to professors for tech-transfer / lab partnerships,
+    # and faculty cross-follow inside their cohort.
+    ("student", "educator"): 4.0,
+    ("intern", "educator"): 3.0,
+    ("educator", "student"): 1.5,
+    ("educator", "intern"): 1.0,
+    ("educator", "educator"): 2.0,
+    ("educator", "operator"): 1.5,
+    ("educator", "executive"): 2.0,
+    ("educator", "advisor"): 1.5,
+    ("educator", "investor"): 1.5,
+    ("operator", "educator"): 1.5,
+    ("executive", "educator"): 1.5,
+    ("advisor", "educator"): 1.5,
+    ("mentor", "educator"): 1.5,
 }
 
 
@@ -1130,6 +1203,13 @@ _TALENT_HIGHLIGHT_TEMPLATES: dict[str, list[str]] = {
         "Startup-friendly {service} firm based in {city}",
         "Worked with {n}+ pre-seed and seed Utah companies",
         "Flat-fee packages for {stage} startups",
+    ],
+    "educator": [
+        "Faculty at {school} — runs {sector_lab}",
+        "Has placed {n} graduate students into Utah startups",
+        "Published in top {sector} venues",
+        "Tech-transfer sponsor for {n} spinouts to date",
+        "Office hours open to founders working on {topic}",
     ],
 }
 
@@ -1332,6 +1412,7 @@ def _talent_bio_extended(rng: random.Random, talent: dict[str, Any]) -> str:
         "mentor": "Mentoring early-stage founders, mostly free of charge.",
         "investor": "Active investor in Utah, prefers to lead.",
         "service_provider": "Built the practice around startup-friendly engagements.",
+        "educator": "Bridges the lab to early-stage founders, pro-bono.",
     }
     chunks.append(motivations.get(talent.get("role_category", "operator"), motivations["operator"]))
 

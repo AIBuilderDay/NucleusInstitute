@@ -249,6 +249,11 @@ def build_mcp_server(
             talents_pool, filters.StudentInternFilters.model_validate(kw)
         )
 
+    def _filter_educators(kw: dict) -> list[Talent]:
+        return filters.filter_educators(
+            talents_pool, filters.EducatorFilters.model_validate(kw)
+        )
+
     def _filter_startups(kw: dict) -> list[Startup]:
         return filters.filter_startups(
             startups_pool, filters.StartupFilters.model_validate(kw)
@@ -263,6 +268,7 @@ def build_mcp_server(
         "investors": _filter_investors,
         "service_providers": _filter_service_providers,
         "students_interns": _filter_students_interns,
+        "educators": _filter_educators,
         "startups": _filter_startups,
     }
 
@@ -414,6 +420,27 @@ def build_mcp_server(
         return _summarize_talents(_filter_students_interns(locals()), limit)
 
     @mcp.tool
+    def find_educators(
+        school: str | None = None,
+        field_of_study: str | None = None,
+        sectors_of_interest: list[Sector] | None = None,
+        mission_keywords_any: list[str] | None = None,
+        location_state: str | None = None,
+        limit: int = 20,
+    ) -> list[dict]:
+        """Find educators — faculty / professors / lecturers (Educator cohort).
+
+        Use when the focal startup wants academic-side connections: a faculty
+        sponsor for a U of U / BYU / USU lab tie-in, a domain professor whose
+        students could intern, or a researcher with relevant publications.
+        Educators engage pro-bono or via institutional channels, not salary.
+        `school` and `field_of_study` are case-insensitive substring matches
+        against the talent's education history (used here as their teaching
+        institution + discipline).
+        """
+        return _summarize_talents(_filter_educators(locals()), limit)
+
+    @mcp.tool
     def find_startups(
         sector: Sector | None = None,
         stages: list[Stage] | None = None,
@@ -466,6 +493,7 @@ def build_mcp_server(
             "investors",
             "service_providers",
             "students_interns",
+            "educators",
             "startups",
         ],
         filters: dict | None = None,

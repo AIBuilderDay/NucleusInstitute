@@ -84,6 +84,15 @@ ROLE_WEIGHTS: dict[str, dict[str, float]] = {
         "location": 0.20,
         "role": 0.10,
     },
+    # Educators bring sector + mission expertise from a specific institution;
+    # comp is irrelevant (skipped in _filter_compensation), and they don't fill
+    # a "role" the way an exec/operator would.
+    RoleCategory.EDUCATOR.value: {
+        "sector": 0.30,
+        "mission": 0.30,
+        "stage": 0.20,
+        "location": 0.20,
+    },
     # investor / service_provider scoring is delegated to TODO matchers; for
     # now we fall back to default weights if they ever route through here.
     RoleCategory.INVESTOR.value: DEFAULT_WEIGHTS,
@@ -120,8 +129,8 @@ def _filter_role_category(t: Talent, s: Startup) -> tuple[bool, str | None]:
 
 
 def _filter_compensation(t: Talent, s: Startup) -> tuple[bool, str | None]:
-    # Mentors offer time for free — skip comp filtering entirely.
-    if t.role_category == RoleCategory.MENTOR.value:
+    # Mentors and educators offer time for free — skip comp filtering entirely.
+    if t.role_category in (RoleCategory.MENTOR.value, RoleCategory.EDUCATOR.value):
         return True, None
 
     talent_wants_salary = t.comp_expectation_type in (

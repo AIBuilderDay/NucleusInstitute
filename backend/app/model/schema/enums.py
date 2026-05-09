@@ -42,6 +42,11 @@ class RoleCategory(StrEnum):
     MENTOR = "mentor"
     INVESTOR = "investor"
     SERVICE_PROVIDER = "service_provider"
+    # Faculty / professors / lecturers who plug their lab, students, and domain
+    # expertise into Utah deep-tech startups. Shares the mentor/advisor flavor
+    # (knowledge-sharing, no salary expectation) but tied to an academic
+    # institution — used by Nucleus to bridge U of U / BYU / USU labs to founders.
+    EDUCATOR = "educator"
 
 
 class RoleTitle(StrEnum):

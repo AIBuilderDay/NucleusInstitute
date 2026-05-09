@@ -128,6 +128,21 @@ class StudentInternFilters(BaseModel):
     sectors_of_interest: list[Sector] | None = None
 
 
+class EducatorFilters(BaseModel):
+    """Filters for the Educator cohort — faculty / lecturers / professors plugging
+    their lab, students, and domain expertise into startups."""
+
+    school: str | None = Field(
+        None, description="Case-insensitive substring match on education[].school (their teaching institution)"
+    )
+    field_of_study: str | None = Field(
+        None, description="Case-insensitive substring match on education[].field (their academic discipline)"
+    )
+    sectors_of_interest: list[Sector] | None = None
+    mission_keywords_any: list[str] | None = None
+    location_state: str | None = None
+
+
 class StartupFilters(BaseModel):
     """Filters for startups — the 'find startups' lookup."""
 
@@ -303,6 +318,33 @@ def filter_students_interns(pool: list[Talent], f: StudentInternFilters) -> list
     return survivors
 
 
+def filter_educators(pool: list[Talent], f: EducatorFilters) -> list[Talent]:
+    survivors = [t for t in pool if t.role_category == RoleCategory.EDUCATOR.value]
+    if f.school:
+        school_l = f.school.lower()
+        survivors = [
+            t for t in survivors
+            if any(school_l in (e.get("school", "") or "").lower() for e in (t.education or []))
+        ]
+    if f.field_of_study:
+        field_l = f.field_of_study.lower()
+        survivors = [
+            t for t in survivors
+            if any(field_l in (e.get("field", "") or "").lower() for e in (t.education or []))
+        ]
+    if (sectors := _enum_values(f.sectors_of_interest)):
+        survivors = [t for t in survivors if set(t.sectors_of_interest) & sectors]
+    if (missions := _str_lower_set(f.mission_keywords_any)):
+        survivors = [
+            t for t in survivors
+            if {m.lower() for m in t.mission_keywords} & missions
+        ]
+    if f.location_state:
+        st = f.location_state
+        survivors = [t for t in survivors if t.location_state == st or t.remote_ok]
+    return survivors
+
+
 def filter_startups(pool: list[Startup], f: StartupFilters) -> list[Startup]:
     survivors = list(pool)
     if (sector := _enum_value(f.sector)) is not None:
@@ -350,6 +392,7 @@ TARGET_TALENT_NETWORKS = (
     "investors",
     "service_providers",
     "students_interns",
+    "educators",
 )
 TARGET_STARTUPS = "startups"
 ALL_TARGETS = (*TARGET_TALENT_NETWORKS, TARGET_STARTUPS)
