@@ -79,13 +79,39 @@ class Settings(BaseSettings):
     linkedin_redirect_uri: str = "http://localhost:8000/api/v1/auth/linkedin/callback"
     linkedin_scopes: str = "openid profile email"
 
+    # -------------------------------------------------------------------------
+    # Google OAuth (Sign-In with Google / OpenID Connect).
+    # Create an OAuth 2.0 Client ID in https://console.cloud.google.com/apis/credentials
+    # under "APIs & Services -> Credentials". Add `google_redirect_uri` to the
+    # client's "Authorized redirect URIs" list (must match exactly). Userinfo
+    # exposes sub, name, given_name, family_name, picture, email, email_verified,
+    # locale — same shape as the LinkedIn OIDC payload, so the onboarding agent
+    # can consume either source interchangeably.
+    # -------------------------------------------------------------------------
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = "http://localhost:8000/api/v1/auth/google/callback"
+    google_scopes: str = "openid profile email"
+
     # HMAC secret for stateless OAuth `state` cookies. Required in non-dev.
+    # Shared between LinkedIn and Google flows — they don't collide because the
+    # state cookie name is provider-scoped.
     oauth_state_secret: str = ""
 
     # Where the OAuth callback redirects the browser after stashing the
-    # userinfo. The frontend reads `?linkedin_handoff=<token>` and calls the
-    # /auth/linkedin/handoff endpoint to retrieve the userinfo JSON.
+    # userinfo. The frontend reads `?linkedin_handoff=<token>` (LinkedIn flow)
+    # or `?google_handoff=<token>` (Google flow) and calls the matching
+    # /auth/<provider>/handoff endpoint to retrieve the userinfo JSON.
     frontend_onboard_url: str = "http://localhost:5173/onboard"
+
+    # -------------------------------------------------------------------------
+    # Resend — outbound email for the in-app outreach button. Get a key from
+    # https://resend.com/api-keys. The FROM domain must be verified in Resend
+    # for production; for dev, Resend's onboarding domain works without setup.
+    # -------------------------------------------------------------------------
+    resend_api_key: str | None = None
+    email_from_address: str = "Nucleus Institute <onboarding@resend.dev>"
+    email_reply_to_default: str | None = None
 
     # -------------------------------------------------------------------------
     # Sentry (optional — wire later, all fields tolerate absence).

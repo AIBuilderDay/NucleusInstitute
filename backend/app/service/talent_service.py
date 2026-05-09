@@ -12,7 +12,7 @@ from app.dao.factory import DAOFactory
 from app.model.database.talent import Talent
 from app.model.database.talent_profile_extension import TalentProfileExtension
 from app.model.schema.profile_extension import TalentProfileExtensionUpsert
-from app.model.schema.talent import TalentCreate
+from app.model.schema.talent import TalentCreate, TalentFullCreate
 
 
 class TalentService:
@@ -45,3 +45,25 @@ class TalentService:
     ) -> TalentProfileExtension:
         data = payload.model_dump(mode="json")
         return await self.profile_dao.upsert(talent_id, **data)
+
+    async def create_with_profile(
+        self, payload: TalentFullCreate
+    ) -> tuple[Talent, TalentProfileExtension | None]:
+        """Insert lean Talent + (optional) extension in one transaction.
+
+        Both writes share the request session so a failure on either rolls
+        back the whole thing — no orphan rows.
+        """
+        lean_data = payload.model_dump(mode="json", exclude={"profile_extension"})
+        talent = await self.talent_dao.add(**lean_data)
+
+        profile: TalentProfileExtension | None = None
+        if payload.profile_extension is not None:
+            ext_data = payload.profile_extension.model_dump(mode="json")
+            profile = await self.profile_dao.add(talent_id=talent.id, **ext_data)
+
+        await self.dao_factory.commit()
+        await self.dao_factory.session.refresh(talent)
+        if profile is not None:
+            await self.dao_factory.session.refresh(profile)
+        return talent, profile

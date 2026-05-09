@@ -276,6 +276,69 @@ Match responses do **not** include these fields — keeps `/match` cheap and the
 match-card payload predictable. Future agentic / embedding matchers can read
 the extended text directly from the DB without changing the wire contract.
 
+### Unified create — lean + extended + embedding in one POST
+
+`POST /api/v1/talent` and `POST /api/v1/startup` accept the lean profile fields
+*and* an optional `profile_extension` block in a single request. Both rows are
+written in one transaction (no orphans on partial failure) and the
+sentence-transformer vector is pre-computed in a FastAPI `BackgroundTasks` job
+so the response returns fast while the next `/match` call hits a warm cache.
+
+```bash
+curl -X POST http://127.0.0.1:8765/api/v1/talent \
+  -H 'content-type: application/json' \
+  -d '{
+    "name": "Jane Doe",
+    "email": "jane@example.com",
+    "headline": "Fractional CFO — life sciences",
+    "role_category": "executive",
+    "role_titles_seeking": ["cfo"],
+    "availability": "fractional",
+    "comp_expectation_type": "salary_plus_equity",
+    "location_city": "Salt Lake City",
+    "primary_network": "operator",
+    "profile_extension": {
+      "bio_extended": "18 years in life sciences finance...",
+      "image_url": "https://i.pravatar.cc/512?u=jane@example.com",
+      "highlights": ["1x exit", "Took diagnostics co through Series B"],
+      "projects": [{"title": "510(k) pre-sub generator", "description": "..."}]
+    }
+  }'
+# → 201 with both the talent and the saved profile_extension inline.
+#   Background task pre-computes the embedding (~50ms; first run loads the
+#   model, ~1–3s). If the embedding fails, the matcher will lazy-compute on
+#   first /match call — no user impact.
+```
+
+Response shape: [`TalentFullResponse`](backend/app/model/schema/talent.py) /
+[`StartupFullResponse`](backend/app/model/schema/startup.py) — the existing
+`TalentResponse` / `StartupResponse` plus a nullable `profile_extension`.
+Atomic transaction lives in
+[`TalentService.create_with_profile`](backend/app/service/talent_service.py)
+/ [`StartupService.create_with_profile`](backend/app/service/startup_service.py);
+embedding pre-warm helpers in
+[backend/app/provider/matching/embedding.py](backend/app/provider/matching/embedding.py)
+(`prewarm_talent_embedding` / `prewarm_startup_embedding`).
+
+Backwards compatible: callers that omit `profile_extension` keep behaving like
+the old endpoint — `profile_extension` comes back as `null`. The separate
+`PUT /{id}/profile` route is still there for editing the extension after the
+fact.
+
+### Seed data fills it in
+
+The seeder generates a `profile_extension` row for every talent (366) and
+startup (132) on first boot — extended bio synthesized from the lean fields,
+real working image URLs (`i.pravatar.cc`, `dicebear`, `picsum.photos` keyed on
+slug/email), per-entity stable RNG so the same person renders the same
+profile across reboots, and probabilistic optional fields (resume URL, github
+links, cover images at 50–85% fill rates) so the data doesn't look uniform.
+Independent pass: a DB seeded before this feature picks up extensions on the
+next boot. See
+[backend/app/seed/generator.py](backend/app/seed/generator.py)
+(`build_talent_extension` / `build_startup_extension`) and
+[backend/app/seed/utah_synthetic.py](backend/app/seed/utah_synthetic.py).
+
 ---
 
 ## Swipe lists — Tinder-style matched / passed tracking
@@ -467,7 +530,59 @@ restarts.
 
 ---
 
-## Onboarding: "Connect with LinkedIn" → agent-built profile
+## "How can I connect?" — agentic outreach strategy
+
+Looking at someone's profile and not sure how to reach out? `POST
+/api/v1/connect/strategy` runs a Claude agent that drafts the answer.
+
+```bash
+curl -X POST http://127.0.0.1:8765/api/v1/connect/strategy \
+  -H 'content-type: application/json' \
+  -d '{"viewer_type":"talent","viewer_id":"<you>",
+       "target_type":"talent","target_id":"<them>"}'
+```
+
+The response is a **deliberate split** between things the system can prove and
+things the agent can suggest:
+
+- **Server-computed structural facts** (never agent-supplied):
+  `already_connected`, `target_follows_viewer`, `mutual_connections_count`
+  + named bridge people, and PageRank brackets for both ends. Pulled from the
+  same DAOs and `NetworkService` the standalone follow/network endpoints use,
+  so it can never lie about whether you actually follow someone.
+- **Agent-written prose**: 2–4 `fit_bullets` (why you're a fit), 3–5
+  `approach_bullets` (channel, hook, do/don't), 3–5 `questions_to_ask`
+  anchored on real fields from the target's profile (prior companies,
+  projects, headline), plus a self-reported `confidence` ∈ [0, 1] and
+  bucketed label (`low`/`medium`/`high`).
+
+**What it accomplishes.** The matching surfaces (`/match`, `/discover`) tell
+you *who* to reach out to. This endpoint tells you *how*. Instead of staring
+at a profile, the user gets a ready-to-skim plan: are we already connected,
+who do we both know, what's our shared vocabulary, what's the warm-intro path
+through the follow graph, and what specific things should the first message
+actually say. Confidence comes back honest — the agent will say "low" when
+overlap is thin, so users learn to calibrate their outreach instead of
+firing off identical templates.
+
+The agent gets seven read-only MCP tools — `get_viewer_profile`,
+`get_target_profile`, `get_overlap` (sectors / skills / missions / alma
+maters / prior companies), `get_connection_status`, `get_warm_intros` (up
+to 12 bridge people in the follow graph), `get_network_context` (PageRank
+brackets), `get_match_score` (the same `rule_filter._score_pair` the matcher
+uses) — all closed over the request's DAOFactory, no HTTP loopback.
+
+Costs 1–6 Anthropic calls per request (typically 2 — one to fan out tools,
+one to emit the JSON envelope). Returns 503 if `ANTHROPIC_API_KEY` is unset,
+404 if either entity doesn't exist. Files:
+[backend/app/api/connect.py](backend/app/api/connect.py),
+[backend/app/service/connect_service.py](backend/app/service/connect_service.py),
+[backend/app/mcp/connect_server.py](backend/app/mcp/connect_server.py),
+[backend/app/model/schema/connect.py](backend/app/model/schema/connect.py).
+
+---
+
+## Onboarding: "Connect with LinkedIn or Google" → agent-built profile
 
 A second Claude agent owns onboarding. Connect-with-LinkedIn gives us identity
 + email; everything else (experience, skills, sectors, comp expectations) the
@@ -617,15 +732,119 @@ curl -X POST http://localhost:8765/api/v1/onboard/agent \
 curl http://localhost:8765/api/v1/talent/<talent_id>
 ```
 
+### Google sign-on (parallel flow)
+
+Same OIDC pattern, mirrored under `/auth/google/*`:
+
+```
+GET  /api/v1/auth/google/login        302 to Google consent screen.
+GET  /api/v1/auth/google/callback     302s to FRONTEND_ONBOARD_URL?google_handoff=<token>.
+GET  /api/v1/auth/google/handoff      Pops the userinfo (single-use, 5-min TTL).
+POST /api/v1/onboard/agent            Body now accepts EITHER linkedin_userinfo
+                                      OR google_userinfo (exactly one), plus
+                                      optional resume_text. Same agent.
+```
+
+Setup: create an OAuth 2.0 Client ID in the
+[Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+(APIs & Services → Credentials → Create Credentials → OAuth client ID → Web
+application). Add `http://localhost:8765/api/v1/auth/google/callback` to
+**Authorized redirect URIs**. Drop the values into `backend/.env`:
+
+```
+GOOGLE_CLIENT_ID="..."
+GOOGLE_CLIENT_SECRET="..."
+GOOGLE_REDIRECT_URI="http://localhost:8765/api/v1/auth/google/callback"
+GOOGLE_SCOPES="openid profile email"
+```
+
+`OAUTH_STATE_SECRET`, `FRONTEND_ONBOARD_URL`, and `ANTHROPIC_API_KEY` are
+shared with the LinkedIn flow.
+
 ### What's deferred
 
-- Persisting the LinkedIn access token, the verified `linkedin_id`, and
-  upsert-by-`linkedin_id` semantics — landing in a follow-up PR with the
-  Talent table changes.
+- Persisting the OIDC access token, the verified provider-side ID
+  (`linkedin_id` / `google_sub`), and upsert-by-provider-ID semantics —
+  landing in a follow-up PR with the Talent table changes.
 - Sessions / JWT / `/me` endpoint.
-- Mirror flow for Startup founders (LinkedIn → Startup profile).
+- Mirror flow for Startup founders (LinkedIn/Google → Startup profile).
 - PDF resume upload (text paste only for now).
 - Replacing the in-process handoff cache with Redis when we go multi-process.
+
+---
+
+## Outreach email — "Send email" button → Resend
+
+`POST /api/v1/email/send` is the endpoint the frontend's "send email" button
+hits. The frontend collects whatever fields it wants the user to fill out
+(subject, message body, banner copy, optional CTA, signoff, etc.), and the
+backend pours those values into a server-side Jinja template that renders to
+HTML and dispatches via [Resend](https://resend.com/).
+
+### Why a server-side template
+
+The template lives at
+[backend/app/templates/email/outreach.html.j2](backend/app/templates/email/outreach.html.j2)
+so every send looks consistent — gradient banner, "From: …" pill, body
+block, optional CTA button, Nucleus footer. The frontend never touches HTML;
+it just types in fields. Auto-escape is on, so user-supplied text can't
+smuggle markup into the email.
+
+### Request
+
+```bash
+curl -X POST http://localhost:8765/api/v1/email/send \
+  -H 'content-type: application/json' \
+  -d '{
+    "sender_type": "talent",
+    "sender_id": "<sender uuid>",
+    "recipient_type": "startup",
+    "recipient_id": "<recipient uuid>",
+    "subject": "Quick intro re: your geothermal stack",
+    "variables": {
+      "banner_eyebrow": "Nucleus Institute",
+      "banner_title": "Jane Doe wants to chat",
+      "banner_subtitle": "Fractional CFO — life sciences & energy",
+      "from_label": "Jane Doe",
+      "from_role": "Fractional CFO",
+      "greeting": "Hi team,",
+      "body": "Saw your seed-stage geothermal play and your CFO gap...",
+      "cta_url": "https://nucleus.example.com/profiles/jane",
+      "cta_label": "View my profile",
+      "signoff": "— Jane",
+      "footer_note": "Reply to chat directly."
+    }
+  }'
+# → 200 {"sent": true, "resend_id": "re_…", "to": "founders@…"}
+```
+
+`sender_type` and `recipient_type` are each `"talent"` or `"startup"`.
+The recipient's `email` column is the actual TO address — talents always have
+one, startups optionally do. If the chosen recipient has no email, the
+endpoint 400s. Reply-to defaults to the sender's email, so replies go back to
+the human, not the platform; override with a top-level `reply_to` if you
+want.
+
+Everything in `variables` is forwarded to the template as-is — the keys
+above (`banner_eyebrow`, `body`, `cta_url`, `signoff`, …) are what the
+template reads, and any of them can be omitted to render an empty section.
+Add new keys whenever you extend the template; no schema change needed.
+
+### Setup
+
+```
+RESEND_API_KEY="re_..."
+EMAIL_FROM_ADDRESS="Nucleus Institute <onboarding@resend.dev>"
+```
+
+`onboarding@resend.dev` works for dev without domain verification; switch to
+a verified domain for prod. If `RESEND_API_KEY` is missing, the endpoint
+returns 503 — the rest of the app still boots.
+
+Implementation:
+[backend/app/api/email.py](backend/app/api/email.py),
+[backend/app/service/email_service.py](backend/app/service/email_service.py),
+[backend/app/model/schema/email.py](backend/app/model/schema/email.py).
 
 ---
 

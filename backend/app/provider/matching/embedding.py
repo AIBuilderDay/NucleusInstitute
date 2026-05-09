@@ -333,6 +333,42 @@ _engine = EmbeddingEngine()
 
 
 # =============================================================================
+# Pre-warm helpers — fired as background tasks from create endpoints so a brand
+# new profile already has its vector in `profile_embedding` by the time anyone
+# runs /match against it. Best-effort: any failure is logged and swallowed,
+# because the matcher will lazy-compute on the next /match call anyway.
+# =============================================================================
+async def prewarm_talent_embedding(talent_id: UUID) -> None:
+    try:
+        async with session_factory() as session:
+            stmt = select(Talent).where(Talent.id == talent_id)
+            t = (await session.execute(stmt)).scalar_one_or_none()
+            if t is None:
+                return
+            await _engine.embed_talents([t])
+    except Exception as exc:  # noqa: BLE001  bg task — never crash the worker
+        from app.core.config import settings
+
+        settings.logger.warning(f"prewarm_talent_embedding({talent_id}) failed: {exc}")
+
+
+async def prewarm_startup_embedding(startup_id: UUID) -> None:
+    try:
+        async with session_factory() as session:
+            stmt = select(Startup).where(Startup.id == startup_id)
+            s = (await session.execute(stmt)).scalar_one_or_none()
+            if s is None:
+                return
+            await _engine.embed_startups([s])
+    except Exception as exc:  # noqa: BLE001
+        from app.core.config import settings
+
+        settings.logger.warning(
+            f"prewarm_startup_embedding({startup_id}) failed: {exc}"
+        )
+
+
+# =============================================================================
 # Helpers — composing MatchResult from rule_filter + cosine
 # =============================================================================
 def _cosine(a: np.ndarray, b: np.ndarray) -> float:

@@ -8,7 +8,7 @@ from app.dao.factory import DAOFactory
 from app.model.database.startup import Startup
 from app.model.database.startup_profile_extension import StartupProfileExtension
 from app.model.schema.profile_extension import StartupProfileExtensionUpsert
-from app.model.schema.startup import StartupCreate
+from app.model.schema.startup import StartupCreate, StartupFullCreate
 
 
 class StartupService:
@@ -37,3 +37,21 @@ class StartupService:
     ) -> StartupProfileExtension:
         data = payload.model_dump(mode="json")
         return await self.profile_dao.upsert(startup_id, **data)
+
+    async def create_with_profile(
+        self, payload: StartupFullCreate
+    ) -> tuple[Startup, StartupProfileExtension | None]:
+        """Insert lean Startup + (optional) extension in one transaction."""
+        lean_data = payload.model_dump(mode="json", exclude={"profile_extension"})
+        startup = await self.startup_dao.add(**lean_data)
+
+        profile: StartupProfileExtension | None = None
+        if payload.profile_extension is not None:
+            ext_data = payload.profile_extension.model_dump(mode="json")
+            profile = await self.profile_dao.add(startup_id=startup.id, **ext_data)
+
+        await self.dao_factory.commit()
+        await self.dao_factory.session.refresh(startup)
+        if profile is not None:
+            await self.dao_factory.session.refresh(profile)
+        return startup, profile

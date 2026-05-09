@@ -19,12 +19,17 @@ from app.model.schema.enums import (
     Stage,
     Urgency,
 )
+from app.model.schema.profile_extension import (
+    StartupProfileExtensionResponse,
+    StartupProfileExtensionUpsert,
+)
 
 
 class StartupBase(BaseModel):
     # identity
     name: str
     website: str | None = None
+    email: str | None = None
     logo_url: str | None = None
     one_liner: str = ""
     description: str = ""
@@ -107,3 +112,15 @@ class StartupResponse(StartupBase):
 class StartupListResponse(BaseModel):
     items: list[StartupResponse]
     total: int
+
+
+class StartupFullCreate(StartupBase):
+    """Lean profile + optional extended profile in one request."""
+
+    profile_extension: StartupProfileExtensionUpsert | None = None
+
+
+class StartupFullResponse(StartupResponse):
+    """StartupResponse + the extension that was just inserted (if any)."""
+
+    profile_extension: StartupProfileExtensionResponse | None = None

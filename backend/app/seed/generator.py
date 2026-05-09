@@ -761,8 +761,10 @@ def _gen_startup(rng: random.Random, idx: int) -> dict[str, Any]:
 
     city, metro = _pick_city(rng)
 
+    full_name = f"{name} {idx:04d}"
     profile: dict[str, Any] = {
-        "name": f"{name} {idx:04d}",
+        "name": full_name,
+        "email": f"hello@{_slugify(full_name)}.{_DOMAIN}",
         "one_liner": _make_one_liner(rng, sector),
         "description": _make_description(rng, sector, stage, origin),
         "sector": sector,

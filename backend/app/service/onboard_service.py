@@ -24,7 +24,7 @@ from fastmcp import Client
 from app.core.config import settings
 from app.dao.factory import DAOFactory
 from app.model.database.talent import Talent
-from app.model.schema.auth import LinkedInUserInfo
+from app.model.schema.auth import GoogleUserInfo, LinkedInUserInfo
 
 MODEL_ID = "claude-sonnet-4-6"
 MAX_LOOP_ITERATIONS = 6  # 1 initial + up to 5 follow-ups; leaves room for retries
@@ -46,12 +46,18 @@ class OnboardService:
             self._client = AsyncAnthropic(api_key=settings.anthropic_api_key)
         return self._client
 
-    async def create_talent_from_linkedin(
+    async def create_talent_from_oidc(
         self,
-        linkedin_userinfo: LinkedInUserInfo,
+        userinfo: LinkedInUserInfo | GoogleUserInfo,
         resume_text: str | None,
+        provider: str,
     ) -> tuple[Talent, str | None]:
         """Run the agent loop, return (saved Talent, optional agent_notes).
+
+        `provider` is "linkedin" or "google" — passed through to the prompt so
+        the agent knows which OIDC source the userinfo came from. Both providers
+        return the same OIDC claim set (sub/name/email/picture/locale) so the
+        agent's extraction logic is identical past the provider label.
 
         Raises HTTPException on:
           - missing ANTHROPIC_API_KEY (503)
@@ -79,7 +85,7 @@ class OnboardService:
             messages: list[dict[str, Any]] = [
                 {
                     "role": "user",
-                    "content": self._user_prompt(linkedin_userinfo, resume_text),
+                    "content": self._user_prompt(userinfo, resume_text, provider),
                 }
             ]
 
@@ -164,9 +170,9 @@ class OnboardService:
         return (
             "You are an onboarding agent for the Nucleus Institute, a Utah deep-tech "
             "matchmaking network. Your job is to extract a structured Talent profile "
-            "from the user's LinkedIn data and (if provided) a pasted resume / "
-            "experience text, then persist it by calling the `create_talent_profile` "
-            "tool exactly once.\n\n"
+            "from the user's OIDC sign-in data (LinkedIn or Google) and (if provided) "
+            "a pasted resume / experience text, then persist it by calling the "
+            "`create_talent_profile` tool exactly once.\n\n"
             "STRICT VOCABULARY — use these enum string values exactly:\n\n"
             "  role_category: executive | operator | student | intern | board_member | "
             "advisor | mentor | investor | service_provider\n"
@@ -235,18 +241,20 @@ class OnboardService:
 
     def _user_prompt(
         self,
-        linkedin_userinfo: LinkedInUserInfo,
+        userinfo: LinkedInUserInfo | GoogleUserInfo,
         resume_text: str | None,
+        provider: str,
     ) -> str:
-        info_json = linkedin_userinfo.model_dump_json(indent=2, exclude_none=True)
+        info_json = userinfo.model_dump_json(indent=2, exclude_none=True)
+        provider_label = provider.upper()
         resume_block = (
             f"\n\nRESUME / EXPERIENCE TEXT (user-pasted):\n{resume_text.strip()}"
             if resume_text and resume_text.strip()
-            else "\n\n(No resume text was provided. Build the profile from the "
-            "LinkedIn fields alone.)"
+            else f"\n\n(No resume text was provided. Build the profile from the "
+            f"{provider_label} fields alone.)"
         )
         return (
             "Create a Talent profile for the user described below.\n\n"
-            f"LINKEDIN USERINFO (OIDC):\n{info_json}"
+            f"{provider_label} USERINFO (OIDC):\n{info_json}"
             f"{resume_block}"
         )

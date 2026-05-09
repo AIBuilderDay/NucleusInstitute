@@ -2,27 +2,46 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 
 from app.model.schema.follow import FollowersResponse, NetworkScoreResponse
 from app.model.schema.profile_extension import (
     StartupProfileExtensionResponse,
     StartupProfileExtensionUpsert,
 )
-from app.model.schema.startup import StartupCreate, StartupListResponse, StartupResponse
+from app.model.schema.startup import (
+    StartupFullCreate,
+    StartupFullResponse,
+    StartupListResponse,
+    StartupResponse,
+)
+from app.provider.matching.embedding import prewarm_startup_embedding
 from app.service.network_service import NetworkService
 from app.service.startup_service import StartupService
 
 router = APIRouter()
 
 
-@router.post("", response_model=StartupResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=StartupFullResponse, status_code=status.HTTP_201_CREATED)
 async def create_startup(
-    payload: StartupCreate,
+    payload: StartupFullCreate,
+    background: BackgroundTasks,
     service: StartupService = Depends(StartupService),
-) -> StartupResponse:
-    startup = await service.create(payload)
-    return StartupResponse.model_validate(startup)
+) -> StartupFullResponse:
+    """Create a Startup: lean profile + (optional) extended profile + embedding.
+
+    Same one-shot shape as `POST /talent` — see that docstring for rationale.
+    """
+    startup, profile = await service.create_with_profile(payload)
+    background.add_task(prewarm_startup_embedding, startup.id)
+    return StartupFullResponse(
+        **StartupResponse.model_validate(startup).model_dump(),
+        profile_extension=(
+            StartupProfileExtensionResponse.model_validate(profile)
+            if profile is not None
+            else None
+        ),
+    )
 
 
 @router.get("", response_model=StartupListResponse)
