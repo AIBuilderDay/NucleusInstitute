@@ -32,6 +32,20 @@ tasks:
     cmds:
       - uv run uvicorn app.main:app --reload --host 127.0.0.1 --port {{.EXTERNAL_PORT}}
 
+  recruiter:dev:
+    desc: "Run the HEAL hiring autopilot UI on :5175"
+    dir: recruiter
+    cmds:
+      - pnpm install --silent
+      - pnpm dev
+
+  autopilot:dev:
+    desc: "Run the HEAL hiring autopilot service on :8766 (separate from backend)"
+    dir: autopilot
+    cmds:
+      - uv sync --quiet
+      - uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8766
+
   up:
     desc: "Build + start backend and frontend in Docker (detached)"
     deps: [env:generate]
@@ -47,6 +61,12 @@ tasks:
     desc: "Remove Python caches"
     cmds:
       - find backend -type d -name __pycache__ -prune -exec rm -rf {} +
+
+  clean:db:
+    desc: "Wipe the SQLite DB only (forces re-seed on next `task dev`)"
+    prompt: "This deletes backend/data/nucleus.db. Continue?"
+    cmds:
+      - rm -f backend/data/nucleus.db
 
   clean:all:
     desc: "Wipe SQLite DB, generated .env, and Python caches"

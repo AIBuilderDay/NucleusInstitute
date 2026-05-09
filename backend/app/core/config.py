@@ -53,7 +53,9 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     # CORS — comma-separated list of allowed origins for the frontend.
     # -------------------------------------------------------------------------
-    cors_allow_origins: str = "http://localhost:3000,http://localhost:5173,http://localhost:5174"
+    cors_allow_origins: str = (
+        "http://localhost:3000,http://localhost:5173,http://localhost:5174,http://localhost:5175"
+    )
 
     @property
     def cors_origins_list(self) -> list[str]:
