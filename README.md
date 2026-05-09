@@ -450,7 +450,7 @@ restarts.
 
 ---
 
-## Onboarding: "Connect with LinkedIn" → agent-built profile
+## Onboarding: "Connect with LinkedIn or Google" → agent-built profile
 
 A second Claude agent owns onboarding. Connect-with-LinkedIn gives us identity
 + email; everything else (experience, skills, sectors, comp expectations) the
@@ -600,13 +600,42 @@ curl -X POST http://localhost:8765/api/v1/onboard/agent \
 curl http://localhost:8765/api/v1/talent/<talent_id>
 ```
 
+### Google sign-on (parallel flow)
+
+Same OIDC pattern, mirrored under `/auth/google/*`:
+
+```
+GET  /api/v1/auth/google/login        302 to Google consent screen.
+GET  /api/v1/auth/google/callback     302s to FRONTEND_ONBOARD_URL?google_handoff=<token>.
+GET  /api/v1/auth/google/handoff      Pops the userinfo (single-use, 5-min TTL).
+POST /api/v1/onboard/agent            Body now accepts EITHER linkedin_userinfo
+                                      OR google_userinfo (exactly one), plus
+                                      optional resume_text. Same agent.
+```
+
+Setup: create an OAuth 2.0 Client ID in the
+[Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+(APIs & Services → Credentials → Create Credentials → OAuth client ID → Web
+application). Add `http://localhost:8765/api/v1/auth/google/callback` to
+**Authorized redirect URIs**. Drop the values into `backend/.env`:
+
+```
+GOOGLE_CLIENT_ID="..."
+GOOGLE_CLIENT_SECRET="..."
+GOOGLE_REDIRECT_URI="http://localhost:8765/api/v1/auth/google/callback"
+GOOGLE_SCOPES="openid profile email"
+```
+
+`OAUTH_STATE_SECRET`, `FRONTEND_ONBOARD_URL`, and `ANTHROPIC_API_KEY` are
+shared with the LinkedIn flow.
+
 ### What's deferred
 
-- Persisting the LinkedIn access token, the verified `linkedin_id`, and
-  upsert-by-`linkedin_id` semantics — landing in a follow-up PR with the
-  Talent table changes.
+- Persisting the OIDC access token, the verified provider-side ID
+  (`linkedin_id` / `google_sub`), and upsert-by-provider-ID semantics —
+  landing in a follow-up PR with the Talent table changes.
 - Sessions / JWT / `/me` endpoint.
-- Mirror flow for Startup founders (LinkedIn → Startup profile).
+- Mirror flow for Startup founders (LinkedIn/Google → Startup profile).
 - PDF resume upload (text paste only for now).
 - Replacing the in-process handoff cache with Redis when we go multi-process.
 
