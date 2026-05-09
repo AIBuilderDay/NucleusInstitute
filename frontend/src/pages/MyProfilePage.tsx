@@ -1,40 +1,51 @@
 import { useEffect, useMemo, useState } from "react";
-import type { MatchResult, Person } from "../types";
+import type { MatchResult, Person, Startup } from "../types";
+import { api, connections, hydrateMatches } from "../api";
 import {
   NETWORK_LABEL,
-  PEOPLE,
+  ROLE_CATEGORY_LABEL,
   SECTOR_LABEL,
   STAGE_LABEL,
-  STARTUPS,
-  api,
-  connections,
-} from "../data";
+} from "../labels";
 import { Avatar, Pill, ScoreArc, Sidesheet, selectStyle } from "../components/ui";
 import { ConnectionWeb } from "../components/ConnectionWeb";
 import { PersonDetailBody } from "./shared";
 
 interface MyProfilePageProps {
+  people: Person[];
+  startups: Startup[];
   currentUser: Person;
   onSwitchUser: (id: string) => void;
   onMatchPerson: (p: Person) => void;
 }
 
 export function MyProfilePage({
+  people,
+  startups,
   currentUser,
   onSwitchUser,
   onMatchPerson,
 }: MyProfilePageProps) {
   const me = currentUser;
-  const conns = useMemo(() => connections(me.id), [me.id]);
+  const conns = useMemo(() => connections(me.id, people), [me.id, people]);
   const [recent, setRecent] = useState<MatchResult[]>([]);
   const [pickedConn, setPickedConn] = useState<Person | null>(null);
 
   useEffect(() => {
+    let dead = false;
     void (async () => {
-      const r = await api.matchPerson(me.id, { topK: 5 });
-      setRecent(r.matches);
+      try {
+        const r = await api.matchPerson(me.id, { topK: 5 });
+        if (dead) return;
+        setRecent(hydrateMatches(r.matches, people, startups));
+      } catch {
+        if (!dead) setRecent([]);
+      }
     })();
-  }, [me.id]);
+    return () => {
+      dead = true;
+    };
+  }, [me.id, people, startups]);
 
   const warm = conns.filter((c) => c.warmth >= 0.6).length;
   const direct = conns.filter((c) => c.warmth >= 0.35).length;
@@ -42,76 +53,71 @@ export function MyProfilePage({
 
   return (
     <div>
-      <section
+      <div
         style={{
-          background: "var(--wasatch-whisper)",
-          borderBottom: "1px solid var(--whisper-300)",
+          maxWidth: 1440,
+          margin: "0 auto",
+          padding: "32px 32px 24px",
+          display: "grid",
+          gridTemplateColumns: "auto 1fr auto",
+          gap: 28,
+          alignItems: "center",
         }}
       >
-        <div
-          style={{
-            maxWidth: 1440,
-            margin: "0 auto",
-            padding: "40px 32px",
-            display: "grid",
-            gridTemplateColumns: "auto 1fr auto",
-            gap: 28,
-            alignItems: "center",
-          }}
-        >
-          <Avatar name={me.name} size={96} tone="blue" />
-          <div>
-            <div className="tiny-caps">My profile · {NETWORK_LABEL[me.primary_network]}</div>
-            <h1
-              className="display"
-              style={{
-                fontSize: 48,
-                fontWeight: 400,
-                margin: "6px 0 8px",
-                color: "var(--nucleus-blue)",
-                letterSpacing: "-0.01em",
-              }}
-            >
-              {me.name}
-            </h1>
-            <div style={{ fontSize: 15, color: "var(--charcoal)" }}>{me.headline}</div>
-            <div style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
-              {(me.trust_badges ?? []).map((b) => (
-                <Pill key={b} tone="copper">
-                  ◆ {b}
-                </Pill>
-              ))}
-              {me.sectors_of_interest.slice(0, 3).map((s) => (
-                <Pill key={s} tone="blue">
-                  {SECTOR_LABEL[s]}
-                </Pill>
-              ))}
-            </div>
+        <Avatar name={me.name} size={84} tone="blue" />
+        <div>
+          <div className="tiny-caps">
+            {ROLE_CATEGORY_LABEL[me.role_category]} · {NETWORK_LABEL[me.primary_network]}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <button className="btn btn-primary" onClick={() => onMatchPerson(me)}>
-              Run my match →
-            </button>
-            <select
-              onChange={(e) => onSwitchUser(e.target.value)}
-              value={me.id}
-              style={{ ...selectStyle, fontSize: 12 }}
-            >
-              {PEOPLE.map((p) => (
-                <option key={p.id} value={p.id}>
-                  View as: {p.name}
-                </option>
-              ))}
-            </select>
+          <h1
+            className="display"
+            style={{
+              fontSize: 36,
+              fontWeight: 400,
+              margin: "4px 0 6px",
+              color: "var(--nucleus-blue)",
+              letterSpacing: "-0.01em",
+            }}
+          >
+            {me.name}
+          </h1>
+          <div style={{ fontSize: 14, color: "var(--charcoal)" }}>{me.headline}</div>
+          <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+            {(me.trust_badges ?? []).map((b) => (
+              <Pill key={b} tone="copper">
+                ◆ {b}
+              </Pill>
+            ))}
+            {me.sectors_of_interest.slice(0, 3).map((s) => (
+              <Pill key={s} tone="blue">
+                {SECTOR_LABEL[s]}
+              </Pill>
+            ))}
           </div>
         </div>
-      </section>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <button className="btn btn-primary" onClick={() => onMatchPerson(me)}>
+            Run my match →
+          </button>
+          <select
+            onChange={(e) => onSwitchUser(e.target.value)}
+            value={me.id}
+            style={{ ...selectStyle, fontSize: 12 }}
+          >
+            {people.map((p) => (
+              <option key={p.id} value={p.id}>
+                View as: {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
 
       <div
         style={{
           maxWidth: 1440,
           margin: "0 auto",
-          padding: "32px 32px 64px",
+          padding: "8px 32px 64px",
           display: "grid",
           gridTemplateColumns: "1fr 380px",
           gap: 28,
@@ -168,7 +174,7 @@ export function MyProfilePage({
               Today's fits
             </h3>
             {recent.slice(0, 5).map((m, i) => {
-              const t = m.startup ?? STARTUPS.find((s) => s.id === m.startup_id);
+              const t = m.startup;
               if (!t) return null;
               return (
                 <div

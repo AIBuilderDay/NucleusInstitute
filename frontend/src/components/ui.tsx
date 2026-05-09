@@ -219,23 +219,29 @@ export function ScoreArc({ score, size = 72, label = true }: ScoreArcProps) {
 }
 
 // ── Dimension bars ────────────────────────────────────────────────────────────
+// The backend only emits dimensions that have non-zero weight for the talent's
+// role_category — e.g., a mentor's dimension_scores has only {sector, mission}.
+// We render exactly what came back, in a canonical order, so the card honestly
+// reflects which dimensions actually scored this match.
 interface DimensionBarsProps {
-  dims?: Partial<DimensionScores>;
+  dims?: DimensionScores;
 }
 
-const DIM_ORDER: Array<keyof DimensionScores> = [
+type DimKey = keyof DimensionScores;
+
+const DIM_ORDER: DimKey[] = [
   "sector",
   "role",
-  "skill",
+  "skills",
   "stage",
   "mission",
   "location",
   "risk",
 ];
-const DIM_LABEL: Record<keyof DimensionScores, string> = {
+const DIM_LABEL: Record<DimKey, string> = {
   sector: "Sector",
   role: "Role",
-  skill: "Skills",
+  skills: "Skills",
   stage: "Stage",
   mission: "Mission",
   location: "Location",
@@ -243,9 +249,17 @@ const DIM_LABEL: Record<keyof DimensionScores, string> = {
 };
 
 export function DimensionBars({ dims }: DimensionBarsProps) {
+  const present = DIM_ORDER.filter((k) => dims?.[k] !== undefined);
+  if (present.length === 0) {
+    return (
+      <div style={{ fontSize: 11, color: "var(--slate-light)", fontStyle: "italic" }}>
+        No dimension breakdown available.
+      </div>
+    );
+  }
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 6, width: "100%" }}>
-      {DIM_ORDER.map((k) => {
+      {present.map((k) => {
         const v = Math.max(0, Math.min(1, dims?.[k] ?? 0));
         const color =
           v >= 0.7

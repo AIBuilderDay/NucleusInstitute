@@ -1,3 +1,6 @@
+// Frontend types that mirror backend Pydantic schemas in
+// backend/app/model/schema/. See glossary.html for the narrative.
+
 export type Sector =
   | "life_sciences"
   | "ai"
@@ -52,16 +55,27 @@ export type CompExpectation = "salary" | "equity" | "salary_plus_equity" | "free
 export type RiskTolerance = "low" | "medium" | "high";
 
 export interface InvestorProfile {
-  investor_type: "angel" | "syndicate" | "fund" | "family_office";
+  investor_type: "angel" | "syndicate" | "fund" | "family_office" | "vc" | "corporate_vc";
   typical_check_size: string;
   portfolio_size?: number;
   utah_only?: boolean;
   lead_check?: boolean;
+  stages_invested?: Stage[];
+  sectors_focused?: Sector[];
+}
+
+export interface ServiceProviderProfile {
+  service_type: string;
+  firm_name: string;
+  startup_friendly_terms?: boolean;
+  stages_served?: Stage[];
+  sectors_served?: Sector[];
 }
 
 export interface Person {
   id: string;
   name: string;
+  email?: string;
   headline: string;
   role_category: RoleCategory;
   availability: Availability;
@@ -82,6 +96,7 @@ export interface Person {
   bio?: string;
   trust_badges?: string[];
   investor_profile?: InvestorProfile;
+  service_provider_profile?: ServiceProviderProfile;
 }
 
 export interface Startup {
@@ -111,16 +126,19 @@ export interface Startup {
   description?: string;
 }
 
+// Mirrors the keys backend/app/provider/matching/rule_filter.py emits.
+// Backend only includes dimensions that have non-zero weight for the
+// talent's role_category, so this is intentionally Partial.
 export type DimensionKey =
   | "role"
   | "sector"
   | "stage"
-  | "skill"
+  | "skills"
   | "mission"
   | "location"
   | "risk";
 
-export type DimensionScores = Record<DimensionKey, number>;
+export type DimensionScores = Partial<Record<DimensionKey, number>>;
 
 export interface MatchResult {
   talent_id: string;
@@ -131,7 +149,7 @@ export interface MatchResult {
   reasons: string[];
   blockers: string[];
   matcher: string;
-  /** Populated client-side; the raw API result only sends ids. */
+  // Hydrated client-side from the loaded people/startups list.
   startup?: Startup;
   person?: Person;
 }
@@ -143,7 +161,7 @@ export interface MatchResponse {
   startup?: Startup;
 }
 
-export type MatcherKey = "rule_filter" | "embedding" | "agentic";
+export type MatcherKey = string;
 
 export interface CompareResponse {
   source: "live" | "mock";
