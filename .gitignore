@@ -27,6 +27,7 @@ venv/
 # IDE
 .idea/
 .vscode/
+.claude/
 *.swp
 
 # OS
@@ -37,3 +38,12 @@ venv/
 /tmp/
 htmlcov/
 coverage.xml
+
+# Node / JS ecosystems (apply to every subproject — frontend, recruiter, future)
+node_modules/
+dist/
+dist-ssr/
+.vite/
+.cache/
+*.tsbuildinfo
+package-lock.json

@@ -1,15 +1,8 @@
 // Single hero shown across every tab. Keeping the banner constant gives the
 // app a stable identity instead of remixing the headline on every nav click.
 
-export type Route =
-  | "landing"
-  | "explore"
-  | "match"
-  | "profile"
-  | "onboard"
-  | "linkedin"
-  | "settings"
-  | "ecosystem";
+
+export type Route = "landing" | "explore" | "match" | "profile" | "topology" | "onboard" | "linkedin" | "ecosystem" | "settings";
 
 export interface HeroContent {
   eyebrow: string;

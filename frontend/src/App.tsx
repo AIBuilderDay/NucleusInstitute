@@ -11,6 +11,7 @@ import { EcosystemPage } from "./ecosystem/EcosystemPage";
 import { LinkedInPage } from "./pages/LinkedInPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { LandingPage } from "./pages/LandingPage";
+import { TopologyPage } from "./topology/TopologyPage";
 
 interface MatchSeed {
   person: Person | null;
@@ -216,6 +217,9 @@ export function App() {
                   setRoute("profile");
                 }}
               />
+            )}
+            {route === "topology" && currentUser && (
+              <TopologyPage people={people} currentUser={currentUser} />
             )}
             {route === "settings" && currentUser && (
               <SettingsPage

@@ -21,15 +21,14 @@ type SearchResult =
   | { kind: "startup"; item: Startup }
   | { kind: "category"; label: string; type: string };
 
-const NAV_ITEMS: ReadonlyArray<{
-  id: Route;
-  label: string;
-  icon: "search" | "filter" | "star" | "globe";
-}> = [
+
+const NAV_ITEMS: ReadonlyArray<{ id: Route; label: string; icon: "search" | "filter" | "star" | "globe" | "topology" }> = [
+
   { id: "explore", label: "Explore", icon: "search" },
   { id: "match", label: "Match", icon: "filter" },
   { id: "ecosystem", label: "Ecosystem", icon: "globe" },
   { id: "profile", label: "Profile", icon: "star" },
+  { id: "topology", label: "Topology", icon: "topology" },
 ];
 
 function NavIcon({ type, active }: { type: string; active?: boolean }) {
@@ -64,6 +63,18 @@ function NavIcon({ type, active }: { type: string; active?: boolean }) {
         <path
           d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"
           stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+        />
+      </svg>
+    );
+  if (type === "topology")
+    return (
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <path
+          d="M1 12l3-5 2.5 3L9 4l4 8"
+          stroke={color}
+          strokeWidth="1.3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
         />
       </svg>
     );

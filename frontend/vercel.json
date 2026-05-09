@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://nucleusinstitute.onrender.com/api/$1"
+    },
+    {
+      "source": "/health",
+      "destination": "https://nucleusinstitute.onrender.com/health"
+    },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
