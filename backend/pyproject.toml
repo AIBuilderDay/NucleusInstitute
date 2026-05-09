@@ -16,6 +16,9 @@ dependencies = [
     "sentry-struct-logger",
     "fastmcp>=3.2.4",
     "anthropic>=0.100.0",
+    "numpy>=2.0.0",
+    # Local sentence-transformer for the EmbeddingMatcher (Apache 2.0, runs offline).
+    "sentence-transformers>=3.0.0",
 ]
 
 [project.optional-dependencies]

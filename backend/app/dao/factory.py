@@ -7,6 +7,8 @@ Services (not into routes) and pull DAOs off it. Routes never touch DAOs directl
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.dao.daos.follow_dao import StartupFollowDAO, TalentFollowDAO
+from app.dao.daos.profile_embedding_dao import ProfileEmbeddingDAO
 from app.dao.daos.startup_dao import StartupDAO
 from app.dao.daos.startup_profile_extension_dao import StartupProfileExtensionDAO
 from app.dao.daos.talent_dao import TalentDAO
@@ -38,6 +40,21 @@ class DAOFactory:
         if "startup_profile_extension" not in self._daos:
             self._daos["startup_profile_extension"] = StartupProfileExtensionDAO(self.session)
         return self._daos["startup_profile_extension"]  # type: ignore[return-value]
+
+    def get_talent_follow_dao(self) -> TalentFollowDAO:
+        if "talent_follow" not in self._daos:
+            self._daos["talent_follow"] = TalentFollowDAO(self.session)
+        return self._daos["talent_follow"]  # type: ignore[return-value]
+
+    def get_startup_follow_dao(self) -> StartupFollowDAO:
+        if "startup_follow" not in self._daos:
+            self._daos["startup_follow"] = StartupFollowDAO(self.session)
+        return self._daos["startup_follow"]  # type: ignore[return-value]
+
+    def get_profile_embedding_dao(self) -> ProfileEmbeddingDAO:
+        if "profile_embedding" not in self._daos:
+            self._daos["profile_embedding"] = ProfileEmbeddingDAO(self.session)
+        return self._daos["profile_embedding"]  # type: ignore[return-value]
 
     async def commit(self) -> None:
         await self.session.commit()

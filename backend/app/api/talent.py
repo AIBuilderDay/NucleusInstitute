@@ -2,31 +2,61 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 
+from app.model.schema.follow import (
+    FollowersResponse,
+    NetworkScoreResponse,
+    TalentFollowingResponse,
+)
 from app.model.schema.profile_extension import (
     TalentProfileExtensionResponse,
     TalentProfileExtensionUpsert,
 )
-from app.model.schema.talent import TalentCreate, TalentListResponse, TalentResponse
+from app.model.schema.talent import (
+    TalentFullCreate,
+    TalentFullResponse,
+    TalentListResponse,
+    TalentResponse,
+)
+from app.provider.matching.embedding import prewarm_talent_embedding
+from app.service.network_service import NetworkService
 from app.service.talent_service import TalentService
 
 router = APIRouter()
 
 
-@router.post("", response_model=TalentResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=TalentFullResponse, status_code=status.HTTP_201_CREATED)
 async def create_talent(
-    payload: TalentCreate,
+    payload: TalentFullCreate,
+    background: BackgroundTasks,
     service: TalentService = Depends(TalentService),
-) -> TalentResponse:
+) -> TalentFullResponse:
+    """Create a Talent: lean profile + (optional) extended profile + embedding.
+
+    All three pieces — the matchable row, the "more details" extension, and
+    the sentence-transformer vector — get populated from a single POST. The
+    lean+extension writes happen atomically in one transaction; the embedding
+    pre-compute runs as a background task so the response returns fast. If
+    the embedding fails, the matcher will lazy-compute on first /match call,
+    so the only user-visible effect is a one-time ~50ms slowdown.
+    """
     existing = await service.get_by_email(payload.email)
     if existing is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Talent with email {payload.email} already exists",
         )
-    talent = await service.create(payload)
-    return TalentResponse.model_validate(talent)
+    talent, profile = await service.create_with_profile(payload)
+    background.add_task(prewarm_talent_embedding, talent.id)
+    return TalentFullResponse(
+        **TalentResponse.model_validate(talent).model_dump(),
+        profile_extension=(
+            TalentProfileExtensionResponse.model_validate(profile)
+            if profile is not None
+            else None
+        ),
+    )
 
 
 @router.get("", response_model=TalentListResponse)
@@ -80,3 +110,91 @@ async def upsert_talent_profile_extension(
         raise HTTPException(status_code=404, detail=f"Talent {talent_id} not found")
     profile = await service.upsert_profile_extension(talent_id, payload)
     return TalentProfileExtensionResponse.model_validate(profile)
+
+
+# ---------- Follow graph + network score ----------------------------------------
+#
+# A talent is the only entity that can *initiate* a follow. Whom they follow can
+# be either another talent (any of the 9 RoleCategory values — exec, operator,
+# student, intern, board_member, advisor, mentor, investor, service_provider) or
+# a startup. The two are split into separate tables/endpoints so the FK is
+# explicit and the PageRank service can reason about them as distinct edge sets.
+
+
+@router.post("/{talent_id}/follow/talent/{target_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def follow_talent(
+    talent_id: UUID,
+    target_id: UUID,
+    service: NetworkService = Depends(NetworkService),
+) -> None:
+    try:
+        await service.follow_talent(talent_id, target_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.delete("/{talent_id}/follow/talent/{target_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def unfollow_talent(
+    talent_id: UUID,
+    target_id: UUID,
+    service: NetworkService = Depends(NetworkService),
+) -> None:
+    await service.unfollow_talent(talent_id, target_id)
+
+
+@router.post("/{talent_id}/follow/startup/{startup_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def follow_startup(
+    talent_id: UUID,
+    startup_id: UUID,
+    service: NetworkService = Depends(NetworkService),
+) -> None:
+    try:
+        await service.follow_startup(talent_id, startup_id)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.delete(
+    "/{talent_id}/follow/startup/{startup_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+async def unfollow_startup(
+    talent_id: UUID,
+    startup_id: UUID,
+    service: NetworkService = Depends(NetworkService),
+) -> None:
+    await service.unfollow_startup(talent_id, startup_id)
+
+
+@router.get("/{talent_id}/following", response_model=TalentFollowingResponse)
+async def list_talent_following(
+    talent_id: UUID,
+    talent_service: TalentService = Depends(TalentService),
+    service: NetworkService = Depends(NetworkService),
+) -> TalentFollowingResponse:
+    if await talent_service.get(talent_id) is None:
+        raise HTTPException(status_code=404, detail=f"Talent {talent_id} not found")
+    return await service.get_following(talent_id)
+
+
+@router.get("/{talent_id}/followers", response_model=FollowersResponse)
+async def list_talent_followers(
+    talent_id: UUID,
+    talent_service: TalentService = Depends(TalentService),
+    service: NetworkService = Depends(NetworkService),
+) -> FollowersResponse:
+    if await talent_service.get(talent_id) is None:
+        raise HTTPException(status_code=404, detail=f"Talent {talent_id} not found")
+    return await service.get_talent_followers(talent_id)
+
+
+@router.get("/{talent_id}/network-score", response_model=NetworkScoreResponse)
+async def get_talent_network_score(
+    talent_id: UUID,
+    service: NetworkService = Depends(NetworkService),
+) -> NetworkScoreResponse:
+    score = await service.get_talent_score(talent_id)
+    if score is None:
+        raise HTTPException(status_code=404, detail=f"Talent {talent_id} not found")
+    return score

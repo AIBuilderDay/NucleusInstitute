@@ -13,11 +13,26 @@ through Pydantic validation just like the JSON-loaded entries.
 
 from __future__ import annotations
 
+import hashlib
 import random
+import re
 from typing import Any
 
 _RNG_SEED = 20260508
 _DOMAIN = "nucleus-synth.example.com"
+
+
+def _stable_seed(s: str) -> int:
+    """Deterministic int from a string. Uses md5 because Python's `hash()` is
+    randomized per-process and would give a different graph each boot."""
+    return int(hashlib.md5(s.encode("utf-8")).hexdigest()[:8], 16)
+
+
+_SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _slugify(s: str) -> str:
+    return _SLUG_RE.sub("-", s.lower()).strip("-") or "x"
 
 
 # ---------- Pools ----------
@@ -891,3 +906,623 @@ def build_synthetic_batch(
         startups.append(_gen_startup(rng, i + 1))
 
     return {"talents": talents, "startups": startups}
+
+
+# ---------- Follow-graph generation ---------------------------------------------
+#
+# Called by `seed_if_empty` AFTER talents + startups have been inserted, so we
+# work from real DB rows (and their UUIDs) rather than the pre-insert dicts. The
+# generator is deterministic — same inputs in the same order yield the same
+# graph — but it lives here next to the rest of the synthetic data because the
+# weights and biases below are tightly coupled to the role / sector vocabulary
+# the rest of this module produces.
+
+# Role-pair affinity: weight applied when follower has role A and followee has
+# role B. Defaults to 0.5 (nonzero, but unweighted) for unlisted pairs so every
+# combination is reachable. Numbers were tuned to produce a non-uniform PageRank
+# distribution on the seeded dataset (otherwise everything ends up at 1/N).
+_ROLE_FOLLOW_AFFINITY: dict[tuple[str, str], float] = {
+    ("student", "mentor"): 5.0,
+    ("student", "executive"): 3.0,
+    ("student", "operator"): 3.0,
+    ("student", "advisor"): 2.0,
+    ("student", "investor"): 1.5,
+    ("intern", "operator"): 4.0,
+    ("intern", "mentor"): 3.0,
+    ("intern", "executive"): 2.5,
+    ("intern", "student"): 1.5,
+    ("operator", "executive"): 3.0,
+    ("operator", "operator"): 2.0,
+    ("operator", "mentor"): 2.5,
+    ("operator", "advisor"): 1.5,
+    ("operator", "investor"): 1.5,
+    ("executive", "executive"): 2.5,
+    ("executive", "investor"): 3.0,
+    ("executive", "board_member"): 2.0,
+    ("executive", "advisor"): 2.0,
+    ("executive", "mentor"): 2.0,
+    ("investor", "investor"): 3.0,
+    ("investor", "executive"): 3.5,
+    ("investor", "advisor"): 2.0,
+    ("investor", "operator"): 2.0,
+    ("advisor", "executive"): 2.0,
+    ("advisor", "advisor"): 2.0,
+    ("advisor", "investor"): 1.5,
+    ("mentor", "executive"): 2.0,
+    ("mentor", "operator"): 2.0,
+    ("mentor", "mentor"): 1.5,
+    ("board_member", "executive"): 2.5,
+    ("board_member", "investor"): 2.5,
+    ("board_member", "board_member"): 2.0,
+    ("service_provider", "executive"): 2.0,
+    ("service_provider", "investor"): 2.5,
+    ("service_provider", "service_provider"): 1.5,
+}
+
+
+def _pair_weight(
+    follower: dict, followee: dict, sector_overlap_boost: float = 1.5
+) -> float:
+    base = _ROLE_FOLLOW_AFFINITY.get(
+        (follower["role_category"], followee["role_category"]),
+        0.5,
+    )
+    f_sectors = set(follower.get("sectors_of_interest") or [])
+    e_sectors = set(followee.get("sectors_of_interest") or [])
+    overlap = len(f_sectors & e_sectors)
+    return base * (1.0 + sector_overlap_boost * overlap)
+
+
+def _talent_startup_weight(talent: dict, startup: dict) -> float:
+    """Higher when the startup's sector overlaps with the talent's interests."""
+    talent_sectors = set(talent.get("sectors_of_interest") or [])
+    startup_sectors = {startup.get("sector")} | set(
+        startup.get("sectors_secondary") or []
+    )
+    overlap = len(talent_sectors & startup_sectors)
+    if overlap == 0:
+        return 0.2
+    return 1.0 + 1.5 * overlap
+
+
+def _weighted_sample_without_replacement(
+    rng: random.Random,
+    items: list[Any],
+    weights: list[float],
+    k: int,
+) -> list[Any]:
+    """Stable weighted sampling without replacement.
+
+    Uses the standard "exponential trick" (Efraimidis-Spirakis): for each item
+    draw u ~ U(0,1), key = u**(1/weight), take the top-k by key. Works
+    correctly with non-uniform weights and zeros (zero-weight items can't be
+    selected because their key is 0).
+    """
+    if k >= len(items):
+        return list(items)
+    keyed: list[tuple[float, int]] = []
+    for i, w in enumerate(weights):
+        if w <= 0:
+            continue
+        u = rng.random()
+        # u**(1/w) sorted descending = ES sampling
+        keyed.append((u ** (1.0 / w), i))
+    keyed.sort(reverse=True)
+    chosen = [items[i] for _, i in keyed[:k]]
+    # If we under-filled (because too many zero weights), pad uniformly
+    if len(chosen) < k:
+        leftover = [items[i] for i in range(len(items)) if items[i] not in chosen]
+        rng.shuffle(leftover)
+        chosen += leftover[: k - len(chosen)]
+    return chosen
+
+
+def build_follow_edges(
+    *,
+    talents: list[dict[str, Any]],
+    startups: list[dict[str, Any]],
+    follows_per_talent_min: int = 3,
+    follows_per_talent_max: int = 14,
+    startups_per_talent_min: int = 0,
+    startups_per_talent_max: int = 5,
+) -> dict[str, list[tuple[Any, Any]]]:
+    """Produce deterministic follow edges over already-persisted entities.
+
+    Each input dict MUST carry an `id` key (UUID). `talents` includes both
+    the curated and procedurally-generated rows; `startups` likewise.
+
+    Returns a dict with two keys:
+      - `talent_follows`  : list of (follower_talent_id, followee_talent_id)
+      - `startup_follows` : list of (follower_talent_id, startup_id)
+    """
+    rng = random.Random(_RNG_SEED + 1)
+
+    talent_edges: list[tuple[Any, Any]] = []
+    startup_edges: list[tuple[Any, Any]] = []
+
+    n_talents = len(talents)
+    n_startups = len(startups)
+    if n_talents == 0:
+        return {"talent_follows": [], "startup_follows": []}
+
+    for follower in talents:
+        # Talent → Talent
+        candidates = [t for t in talents if t["id"] != follower["id"]]
+        weights = [_pair_weight(follower, c) for c in candidates]
+        k = min(rng.randint(follows_per_talent_min, follows_per_talent_max), len(candidates))
+        chosen = _weighted_sample_without_replacement(rng, candidates, weights, k)
+        for c in chosen:
+            talent_edges.append((follower["id"], c["id"]))
+
+        # Talent → Startup
+        if n_startups > 0:
+            ks = rng.randint(startups_per_talent_min, startups_per_talent_max)
+            if ks > 0:
+                weights_s = [_talent_startup_weight(follower, s) for s in startups]
+                chosen_s = _weighted_sample_without_replacement(rng, startups, weights_s, ks)
+                for s in chosen_s:
+                    startup_edges.append((follower["id"], s["id"]))
+
+    return {"talent_follows": talent_edges, "startup_follows": startup_edges}
+
+
+# ---------- Profile extension generation ----------------------------------------
+#
+# Produces deterministic content for the `talent_profile_extension` and
+# `startup_profile_extension` tables. Driven by stable per-entity RNGs (seeded
+# from email / name) so adding or removing rows elsewhere doesn't shift what
+# any specific person/company looks like.
+#
+# Image and link URLs use well-known free placeholder services (pravatar,
+# picsum, dicebear) so the demo UI renders real images without us having to
+# host any assets.
+
+_TALENT_HIGHLIGHT_TEMPLATES: dict[str, list[str]] = {
+    "executive": [
+        "Led {team_size}-person {role} org at {prior_company}",
+        "Closed ${raise}M {round} round as {role}",
+        "Took {prior_company} from {start_arr} to ${end_arr}M ARR",
+        "{exits}x exits, including {prior_company}",
+        "Sat on {n} startup boards across {sector}",
+    ],
+    "operator": [
+        "Built and shipped {feature} at {prior_company}",
+        "Owned {kpi} for {sector} platform serving {scale}",
+        "Mentored {n} ICs into senior roles",
+        "Cut {kpi2} by {pct}% over 18 months",
+    ],
+    "student": [
+        "Research assistant in {sector_lab} at {school}",
+        "Hackathon winner — {project}",
+        "Lassonde / capstone project on {project}",
+        "Published in {sector} venue",
+    ],
+    "intern": [
+        "Two summer internships in {sector}",
+        "Built {project} as a personal project",
+        "Bootcamp grad — capstone shipped to production",
+    ],
+    "advisor": [
+        "Advised {n} {sector} startups through pre-seed and seed",
+        "Former {prior_title} at {prior_company}",
+        "Domain expert in {skill}",
+    ],
+    "mentor": [
+        "{exits}x exit founder, now mentoring full-time",
+        "Office hours on {topic} for Utah founders",
+        "Coached {n} CEOs through {round} rounds",
+    ],
+    "board_member": [
+        "Independent director — {sector}",
+        "Former CEO of {prior_company}",
+        "Audit / comp committee experience",
+        "{exits}x exits as operator and board member",
+    ],
+    "investor": [
+        "Lead checks {check_size} into {sector}",
+        "Portfolio of {portfolio} {sector} companies",
+        "Utah-focused — knows the local LP base",
+        "Board observer at {n} active investments",
+    ],
+    "service_provider": [
+        "Startup-friendly {service} firm based in {city}",
+        "Worked with {n}+ pre-seed and seed Utah companies",
+        "Flat-fee packages for {stage} startups",
+    ],
+}
+
+_STARTUP_HIGHLIGHT_TEMPLATES: list[str] = [
+    "Founded {founded_year} in {city}, {metro}",
+    "{stage_label} stage — {team_size} on the team",
+    "${total_raised}M raised to date ({funding_status})",
+    "Currently hiring for {roles}",
+    "Mission: {mission}",
+    "{accelerator} alum",
+    "{grant} grantee",
+    "{origin_label}",
+    "Working with {customer} design partners",
+]
+
+_PROJECT_TEMPLATES_BY_SECTOR: dict[str, list[tuple[str, str]]] = {
+    "life_sciences": [
+        ("Open-source ELN connector", "Side project bridging benchling-style ELN data to a local lakehouse for {sector} researchers."),
+        ("510(k) pre-sub generator", "Tool that drafts FDA pre-submission packages from device IFU + risk analysis."),
+        ("Cell-line ontology browser", "Visual explorer for ATCC cell-line metadata."),
+    ],
+    "ai": [
+        ("RAG eval harness", "Benchmark suite for measuring retrieval quality across {sector} corpora."),
+        ("Agent observability proxy", "Drop-in proxy that captures and replays tool calls for agentic systems."),
+        ("Fine-tune cookbook", "Reference repo for QLoRA on consumer GPUs."),
+    ],
+    "defense_aerospace": [
+        ("GPS-denied nav demo", "Vision-based pose estimation for tactical UAS."),
+        ("RF link budget calculator", "Interactive tool for SATCOM and tactical radio planning."),
+        ("CMMC readiness checklist", "Open checklist for primes preparing for CMMC L2."),
+    ],
+    "cyber": [
+        ("ICS honeypot", "Modbus/DNP3 honeypot with telemetry pipeline."),
+        ("Detection-as-code starter", "Sigma → SIEM converter for blue teams."),
+        ("Zero-trust reference arch", "Reference deployment for SaaS startups."),
+    ],
+    "energy": [
+        ("Geothermal economics model", "Open spreadsheet model for closed-loop geothermal LCOE."),
+        ("DER orchestration POC", "Demo controller for behind-the-meter battery + solar."),
+        ("Grid interconnection tracker", "Public dashboard of Western Interconnection queue depth."),
+    ],
+    "advanced_manufacturing": [
+        ("Shop-floor OEE dashboard", "Open-source OEE tracker for small job shops."),
+        ("CNC tool wear classifier", "Computer vision side project for end-mill wear."),
+        ("Quality-system templates", "ISO 9001 starter pack for early-stage hardware companies."),
+    ],
+    "fintech": [
+        ("ACH retry simulator", "Toy model of retry strategies vs. NSF rates."),
+        ("Lending math notebooks", "Jupyter notebooks demonstrating common credit risk models."),
+        ("KYC vendor comparison", "Side-by-side feature matrix of US KYC providers."),
+    ],
+    "software": [
+        ("OpenTelemetry starter", "Reference repo wiring OTel into a Python + Node stack."),
+        ("Postgres migration helper", "CLI that generates safe online schema changes."),
+        ("Static analysis playground", "Hosted demo of tree-sitter queries for code search."),
+    ],
+}
+
+_LINK_DOMAINS = {
+    "github": "github.com",
+    "twitter": "twitter.com",
+    "website": "example.com",
+}
+
+
+def _talent_highlights(rng: random.Random, talent: dict[str, Any]) -> list[str]:
+    role = talent.get("role_category", "operator")
+    sector = (talent.get("sectors_of_interest") or ["software"])[0]
+    sector_label = sector.replace("_", " ")
+    skills = talent.get("skills") or ["product strategy"]
+    prior_companies = talent.get("prior_companies") or ["a Utah startup"]
+    prior_titles = talent.get("prior_titles") or ["Senior Engineer"]
+    exits = int(talent.get("prior_exits") or 0)
+    years = int(talent.get("years_experience") or 5)
+
+    pool = _TALENT_HIGHLIGHT_TEMPLATES.get(role, _TALENT_HIGHLIGHT_TEMPLATES["operator"])
+    k = rng.randint(3, min(5, len(pool)))
+    chosen = rng.sample(pool, k)
+
+    ctx = {
+        "role": (talent.get("role_titles_seeking") or [role])[0].replace("_", " ").title(),
+        "team_size": rng.choice([6, 12, 18, 24, 40, 75, 120]),
+        "prior_company": rng.choice(prior_companies),
+        "raise": rng.choice([1.5, 3.2, 6.0, 12.5, 28.0]),
+        "round": rng.choice(["seed", "Series A", "Series B"]),
+        "start_arr": rng.choice([0, 1, 3, 5]),
+        "end_arr": rng.choice([8, 14, 22, 45]),
+        "exits": exits if exits > 0 else rng.choice([1, 2]),
+        "n": rng.choice([3, 5, 8, 12]),
+        "sector": sector_label,
+        "sector_lab": rng.choice(["a wet lab", "an ML lab", "a robotics lab", "a cleantech lab", "a security lab"]),
+        "school": (talent.get("university_affiliations") or [rng.choice(UNIVERSITIES)])[0],
+        "project": rng.choice(skills).title(),
+        "feature": rng.choice(["billing v2", "the data platform", "the onboarding redesign", "a real-time pricing engine", "the inference fleet"]),
+        "kpi": rng.choice(["uptime", "p95 latency", "activation rate", "CAC", "trial-to-paid conversion"]),
+        "kpi2": rng.choice(["incident MTTR", "build times", "infra spend", "support ticket volume"]),
+        "pct": rng.choice([22, 35, 41, 58, 70]),
+        "scale": rng.choice(["10M+ users", "thousands of enterprises", "hundreds of design partners", "every Fortune 500"]),
+        "skill": rng.choice(skills),
+        "topic": rng.choice(skills),
+        "prior_title": rng.choice(prior_titles),
+        "check_size": rng.choice(["$50–250K", "$100K–500K", "$250K–1M", "$1–3M"]),
+        "portfolio": rng.choice([8, 14, 22, 35, 60]),
+        "service": (talent.get("service_provider_profile") or {}).get("service_type", "advisory").title(),
+        "city": talent.get("location_city") or "Salt Lake City",
+        "stage": rng.choice(["pre-seed", "seed", "Series A"]),
+    }
+
+    rendered: list[str] = []
+    for tmpl in chosen:
+        try:
+            rendered.append(tmpl.format(**ctx))
+        except KeyError:
+            continue
+    # Always anchor with a "years of experience" line.
+    if years and not any("year" in h for h in rendered):
+        rendered.insert(0, f"{years} years in {sector_label}")
+    return rendered
+
+
+def _talent_projects(rng: random.Random, talent: dict[str, Any]) -> list[dict[str, Any]]:
+    sectors = talent.get("sectors_of_interest") or ["software"]
+    pool: list[tuple[str, str]] = []
+    for s in sectors:
+        pool.extend(_PROJECT_TEMPLATES_BY_SECTOR.get(s, []))
+    if not pool:
+        pool = _PROJECT_TEMPLATES_BY_SECTOR["software"]
+    k = rng.randint(1, min(3, len(pool)))
+    picks = rng.sample(pool, k)
+    slug_base = _slugify(talent.get("name") or "person")
+    out: list[dict[str, Any]] = []
+    for i, (title, desc) in enumerate(picks):
+        out.append({
+            "title": title,
+            "description": desc.format(sector=sectors[0].replace("_", " ")),
+            "url": f"https://github.com/{slug_base}/{_slugify(title)}" if rng.random() < 0.7 else None,
+        })
+    return out
+
+
+def _talent_links(rng: random.Random, talent: dict[str, Any]) -> dict[str, str]:
+    slug = _slugify(talent.get("name") or talent.get("email") or "user")
+    links: dict[str, str] = {}
+    if talent.get("linkedin_url"):
+        links["linkedin"] = talent["linkedin_url"]
+    elif rng.random() < 0.85:
+        links["linkedin"] = f"https://linkedin.com/in/{slug}"
+    if rng.random() < 0.6:
+        links["github"] = f"https://github.com/{slug}"
+    if rng.random() < 0.35:
+        links["twitter"] = f"https://twitter.com/{slug}"
+    if rng.random() < 0.45:
+        links["website"] = f"https://{slug}.dev"
+    return links
+
+
+def _talent_bio_extended(rng: random.Random, talent: dict[str, Any]) -> str:
+    name = talent.get("name") or "This person"
+    role = talent.get("role_category", "operator").replace("_", " ")
+    role_title = (talent.get("role_titles_seeking") or [role])[0].replace("_", " ").title()
+    sectors = talent.get("sectors_of_interest") or ["software"]
+    sector_phrase = " and ".join(s.replace("_", " ") for s in sectors[:2])
+    skills = talent.get("skills") or []
+    skills_phrase = ", ".join(skills[:4]) if skills else "applied engineering"
+    years = int(talent.get("years_experience") or 0)
+    prior_companies = talent.get("prior_companies") or []
+    exits = int(talent.get("prior_exits") or 0)
+    city = talent.get("location_city") or "Salt Lake City"
+    base_bio = (talent.get("bio") or "").strip()
+
+    chunks: list[str] = []
+    if base_bio:
+        chunks.append(base_bio)
+    else:
+        chunks.append(
+            f"{name} is a {role_title} working at the intersection of {sector_phrase}."
+        )
+
+    if years:
+        chunks.append(
+            f"{years} years of hands-on work, with depth in {skills_phrase}."
+        )
+
+    if prior_companies:
+        chunks.append(
+            f"Previously at {', '.join(prior_companies[:3])}"
+            + (f"; {exits}x exits" if exits else "")
+            + "."
+        )
+    elif exits:
+        chunks.append(f"{exits}x exits as an operator.")
+
+    motivations = {
+        "executive": "Looking for the next hard problem to own end to end.",
+        "operator": "Wants to build with a small team that ships fast.",
+        "student": "Looking for an apprentice-style first role.",
+        "intern": "Open to internships across the Wasatch Front.",
+        "board_member": "Open to one or two more independent board seats.",
+        "advisor": "Takes on a small number of advising relationships at a time.",
+        "mentor": "Mentoring early-stage founders, mostly free of charge.",
+        "investor": "Active investor in Utah, prefers to lead.",
+        "service_provider": "Built the practice around startup-friendly engagements.",
+    }
+    chunks.append(motivations.get(talent.get("role_category", "operator"), motivations["operator"]))
+
+    chunks.append(f"Based in {city}.")
+
+    # Trim to 4–5 sentences for readability.
+    return " ".join(chunks)
+
+
+def build_talent_extension(talent: dict[str, Any]) -> dict[str, Any]:
+    """Build the kwargs for a TalentProfileExtension row.
+
+    `talent` may be either the pre-insert dict or an ORM-row-as-dict; only
+    public attribute names are read. Stable per-entity RNG seeded from email
+    so the same person always renders the same extension.
+    """
+    seed_key = (talent.get("email") or talent.get("name") or "?") + "::ext"
+    rng = random.Random(_stable_seed(seed_key))
+
+    slug = _slugify(talent.get("name") or talent.get("email") or "user")
+    email = talent.get("email") or slug
+
+    image_url = f"https://i.pravatar.cc/512?u={email}"
+    cover_image_url = (
+        f"https://picsum.photos/seed/{slug}-cover/1200/400"
+        if rng.random() < 0.85
+        else None
+    )
+    resume_url = (
+        f"https://resumes.{_DOMAIN}/{slug}.pdf" if rng.random() < 0.55 else None
+    )
+
+    return {
+        "bio_extended": _talent_bio_extended(rng, talent),
+        "resume_url": resume_url,
+        "image_url": image_url,
+        "cover_image_url": cover_image_url,
+        "links": _talent_links(rng, talent),
+        "projects": _talent_projects(rng, talent),
+        "highlights": _talent_highlights(rng, talent),
+    }
+
+
+def _startup_highlights(rng: random.Random, startup: dict[str, Any]) -> list[str]:
+    stage = startup.get("stage") or "seed"
+    funding_status = startup.get("funding_status") or "bootstrapped"
+    total_raised = int(startup.get("total_raised_usd") or 0)
+    team_size = int(startup.get("team_size") or 1)
+    founded = startup.get("founded_year")
+    city = startup.get("location_city") or "Salt Lake City"
+    metro = startup.get("location_metro") or "Wasatch Front"
+    roles = startup.get("roles_needed") or []
+    grants = startup.get("recent_grants") or []
+    accel = startup.get("accelerator_affiliations") or []
+    origin = startup.get("origin") or "bootstrapped"
+    missions = startup.get("mission_keywords") or []
+
+    origin_label = {
+        "bootstrapped": "Bootstrapped",
+        "vc_backed": "VC-backed",
+        "university_lab_uofu": "U of U Tech Transfer spinout",
+        "university_lab_byu": "BYU spinout",
+        "university_lab_usu": "USU spinout",
+        "grant_funded": "Grant-funded",
+    }.get(origin, origin.replace("_", " ").title())
+
+    candidates: list[str] = []
+    if founded:
+        candidates.append(f"Founded {founded} in {city}, {metro}")
+    candidates.append(f"{stage.replace('_', ' ').title()} stage — {team_size}-person team")
+    if total_raised > 0:
+        candidates.append(f"${total_raised / 1_000_000:.1f}M raised ({funding_status.replace('_', ' ')})")
+    if roles:
+        candidates.append("Currently hiring: " + ", ".join(r.replace("_", " ") for r in roles[:3]))
+    if missions:
+        candidates.append(f"Mission: {missions[0]}")
+    if accel:
+        candidates.append(f"{accel[0]} alum")
+    if grants:
+        candidates.append(f"{grants[0]} grantee")
+    candidates.append(origin_label)
+    if rng.random() < 0.5:
+        candidates.append(
+            f"Working with {rng.choice([3, 5, 8, 12])} design partners across {(startup.get('sector') or 'software').replace('_', ' ')}"
+        )
+
+    # Dedupe while preserving order, cap at 6.
+    seen: set[str] = set()
+    out: list[str] = []
+    for h in candidates:
+        if h not in seen:
+            seen.add(h)
+            out.append(h)
+        if len(out) >= 6:
+            break
+    return out
+
+
+def _startup_links(rng: random.Random, startup: dict[str, Any]) -> dict[str, str]:
+    slug = _slugify(startup.get("name") or "company")
+    links: dict[str, str] = {}
+    if startup.get("website"):
+        links["website"] = startup["website"]
+    elif rng.random() < 0.85:
+        links["website"] = f"https://{slug}.io"
+    if rng.random() < 0.7:
+        links["linkedin"] = f"https://linkedin.com/company/{slug}"
+    if rng.random() < 0.4:
+        links["crunchbase"] = f"https://crunchbase.com/organization/{slug}"
+    if rng.random() < 0.5:
+        links["github"] = f"https://github.com/{slug}"
+    if rng.random() < 0.3:
+        links["twitter"] = f"https://twitter.com/{slug}"
+    return links
+
+
+def _startup_description_extended(rng: random.Random, startup: dict[str, Any]) -> str:
+    name = startup.get("name") or "This company"
+    sector = (startup.get("sector") or "software").replace("_", " ")
+    one_liner = (startup.get("one_liner") or "").strip()
+    description = (startup.get("description") or "").strip()
+    stage = (startup.get("stage") or "seed").replace("_", " ")
+    team_size = int(startup.get("team_size") or 1)
+    city = startup.get("location_city") or "Salt Lake City"
+    missions = startup.get("mission_keywords") or []
+    roles = startup.get("roles_needed") or []
+    seeking_inv = bool(startup.get("seeking_investment"))
+    target_raise = startup.get("target_raise_usd")
+
+    chunks: list[str] = []
+    if description:
+        chunks.append(description)
+    elif one_liner:
+        chunks.append(f"{name}: {one_liner}.")
+    else:
+        chunks.append(f"{name} is a {stage}-stage {sector} company.")
+
+    chunks.append(
+        f"A {team_size}-person team operating out of {city}, working on {sector} for "
+        + (missions[0] if missions else "the underserved Utah ecosystem")
+        + "."
+    )
+
+    if roles:
+        chunks.append(
+            "Currently hiring "
+            + ", ".join(r.replace("_", " ") for r in roles[:3])
+            + " — open to full-time, fractional, and advisory shapes."
+        )
+    else:
+        chunks.append(
+            "Not actively hiring a full role this quarter, but open to advisor and investor introductions."
+        )
+
+    if seeking_inv and target_raise:
+        chunks.append(
+            f"Currently raising a ${target_raise / 1_000_000:.1f}M round; "
+            + ("looking for a lead." if startup.get("seeking_lead") else "stacking SAFEs from aligned angels.")
+        )
+    elif seeking_inv:
+        chunks.append("Open to investor conversations for the next round.")
+
+    closer = rng.choice([
+        "Long-term ambition is to make Utah the default starting point for this category.",
+        "We care a lot about doing the unglamorous integration work nobody else wants to do.",
+        "Default-alive is the operating philosophy.",
+        "We hire people who can hold the whole problem in their head.",
+    ])
+    chunks.append(closer)
+    return " ".join(chunks)
+
+
+def build_startup_extension(startup: dict[str, Any]) -> dict[str, Any]:
+    """Build kwargs for a StartupProfileExtension row."""
+    seed_key = (startup.get("name") or "?") + "::ext"
+    rng = random.Random(_stable_seed(seed_key))
+
+    slug = _slugify(startup.get("name") or "company")
+    image_url = f"https://api.dicebear.com/7.x/shapes/svg?seed={slug}"
+    cover_image_url = (
+        f"https://picsum.photos/seed/{slug}-cover/1200/400"
+        if rng.random() < 0.9
+        else None
+    )
+    pitch_deck_url = (
+        f"https://decks.{_DOMAIN}/{slug}.pdf" if rng.random() < 0.5 else None
+    )
+
+    return {
+        "description_extended": _startup_description_extended(rng, startup),
+        "pitch_deck_url": pitch_deck_url,
+        "image_url": image_url,
+        "cover_image_url": cover_image_url,
+        "links": _startup_links(rng, startup),
+        "highlights": _startup_highlights(rng, startup),
+    }

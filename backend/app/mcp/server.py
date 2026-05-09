@@ -25,11 +25,15 @@ SCORE AUTHORITY
 Every find_* tool ranks by `RuleFilterMatcher._score_pair` — same scoring
 engine `rule_filter` uses. The agent re-orders the survivors and writes new
 `reasons`, but never invents a score. See PLAN.md §7.5.
+
+FILTER PRIMITIVES are shared with the `/discover` REST endpoints — they live
+in `app/provider/matching/filters.py`. Both this MCP server and the discovery
+service import them so the rule semantics never drift between the two surfaces.
 """
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Literal
 
 from fastmcp import FastMCP
 
@@ -45,6 +49,7 @@ from app.model.schema.enums import (
     ServiceType,
     Stage,
 )
+from app.provider.matching import filters
 from app.provider.matching.rule_filter import RuleFilterMatcher
 
 # Re-use the singleton instance the rule_filter registry already created so we
@@ -56,21 +61,8 @@ HARD_LIMIT = 30
 
 
 # =============================================================================
-# Helpers — projections + filter primitives.
+# Helpers — projections.
 # =============================================================================
-def _enum_values(items: list[Any] | None) -> set[str]:
-    """Normalize a list that may contain enum members or strings to a set of strs."""
-    if not items:
-        return set()
-    return {x.value if hasattr(x, "value") else x for x in items}
-
-
-def _str_lower_set(items: list[str] | None) -> set[str]:
-    if not items:
-        return set()
-    return {s.lower() for s in items}
-
-
 def _talent_summary(t: Talent, score: float, top_reason: str | None) -> dict:
     return {
         "id": str(t.id),
@@ -217,169 +209,53 @@ def build_mcp_server(
     focal_startup: Startup | None = None if focal_is_talent else focal  # type: ignore[assignment]
 
     # =========================================================================
-    # Talent filter primitives — return raw survivor lists. find_* tools wrap
-    # these; the count tool also calls these directly.
+    # Filter wrappers — bind the shared primitives in `filters.py` to the
+    # per-request candidate pools. Each takes the raw kwargs the agent passed
+    # to its corresponding find_* tool, builds the typed Pydantic filter, and
+    # delegates. This is the only place the closure-over-pool happens.
     # =========================================================================
-    def _filter_operators(f: dict) -> list[Talent]:
-        survivors = [
-            t for t in talents_pool
-            if t.role_category in (RoleCategory.EXECUTIVE.value, RoleCategory.OPERATOR.value)
-        ]
-        if (sectors := _enum_values(f.get("sectors_of_interest"))):
-            survivors = [t for t in survivors if set(t.sectors_of_interest) & sectors]
-        if (titles := _enum_values(f.get("role_titles_seeking"))):
-            survivors = [t for t in survivors if set(t.role_titles_seeking) & titles]
-        if (skills := _str_lower_set(f.get("skills_any"))):
-            survivors = [t for t in survivors if {sk.lower() for sk in t.skills} & skills]
-        if (avail := f.get("availability")):
-            avail_str = avail.value if hasattr(avail, "value") else avail
-            survivors = [t for t in survivors if t.availability == avail_str]
-        if (cap := f.get("comp_max_min_usd")) is not None:
-            survivors = [
-                t for t in survivors
-                if t.comp_min_salary_usd is None or t.comp_min_salary_usd <= cap
-            ]
-        if (state := f.get("location_state")):
-            survivors = [t for t in survivors if t.location_state == state or t.remote_ok]
-        if (remote := f.get("remote_ok")) is not None:
-            survivors = [t for t in survivors if t.remote_ok == remote]
-        if (stages := _enum_values(f.get("stages"))):
-            survivors = [t for t in survivors if set(t.stage_preference) & stages]
-        return survivors
+    def _filter_operators(kw: dict) -> list[Talent]:
+        return filters.filter_operators(
+            talents_pool, filters.OperatorFilters.model_validate(kw)
+        )
 
-    def _filter_mentors(f: dict) -> list[Talent]:
-        survivors = [t for t in talents_pool if t.role_category == RoleCategory.MENTOR.value]
-        if (sectors := _enum_values(f.get("sectors_of_interest"))):
-            survivors = [t for t in survivors if set(t.sectors_of_interest) & sectors]
-        if (missions := _str_lower_set(f.get("mission_keywords_any"))):
-            survivors = [t for t in survivors if {m.lower() for m in t.mission_keywords} & missions]
-        if (state := f.get("location_state")):
-            survivors = [t for t in survivors if t.location_state == state or t.remote_ok]
-        if (hpw_max := f.get("hours_per_week_max")) is not None:
-            survivors = [
-                t for t in survivors
-                if t.hours_per_week_max is None or t.hours_per_week_max <= hpw_max
-            ]
-        return survivors
+    def _filter_mentors(kw: dict) -> list[Talent]:
+        return filters.filter_mentors(
+            talents_pool, filters.MentorFilters.model_validate(kw)
+        )
 
-    def _filter_advisors(f: dict) -> list[Talent]:
-        survivors = [t for t in talents_pool if t.role_category == RoleCategory.ADVISOR.value]
-        if (domains := _str_lower_set(f.get("domain_expertise_any"))):
-            survivors = [t for t in survivors if {d.lower() for d in t.domain_expertise} & domains]
-        if (sectors := _enum_values(f.get("sectors_of_interest"))):
-            survivors = [t for t in survivors if set(t.sectors_of_interest) & sectors]
-        if (eq := f.get("equity_acceptable")) is not None:
-            survivors = [t for t in survivors if t.equity_acceptable == eq]
-        if (min_count := f.get("ventures_advised_count_min")) is not None:
-            survivors = [t for t in survivors if (t.ventures_advised_count or 0) >= min_count]
-        return survivors
+    def _filter_advisors(kw: dict) -> list[Talent]:
+        return filters.filter_advisors(
+            talents_pool, filters.AdvisorFilters.model_validate(kw)
+        )
 
-    def _filter_board_members(f: dict) -> list[Talent]:
-        survivors = [t for t in talents_pool if t.role_category == RoleCategory.BOARD_MEMBER.value]
-        if (titles := _str_lower_set(f.get("prior_titles_any"))):
-            survivors = [t for t in survivors if {p.lower() for p in t.prior_titles} & titles]
-        if (sectors := _enum_values(f.get("sectors_of_interest"))):
-            survivors = [t for t in survivors if set(t.sectors_of_interest) & sectors]
-        if (stages := _enum_values(f.get("stages"))):
-            survivors = [t for t in survivors if set(t.stage_preference) & stages]
-        return survivors
+    def _filter_board_members(kw: dict) -> list[Talent]:
+        return filters.filter_board_members(
+            talents_pool, filters.BoardMemberFilters.model_validate(kw)
+        )
 
-    def _filter_investors(f: dict) -> list[Talent]:
-        survivors = [t for t in talents_pool if t.role_category == RoleCategory.INVESTOR.value]
-        # All investor-specific filters live on talent.investor_profile (a JSON dict).
-        def ip(t: Talent) -> dict:
-            return t.investor_profile or {}
+    def _filter_investors(kw: dict) -> list[Talent]:
+        return filters.filter_investors(
+            talents_pool, filters.InvestorFilters.model_validate(kw)
+        )
 
-        if (itype := f.get("investor_type")):
-            itype_str = itype.value if hasattr(itype, "value") else itype
-            survivors = [t for t in survivors if ip(t).get("investor_type") == itype_str]
-        if (cs := f.get("typical_check_size")):
-            cs_str = cs.value if hasattr(cs, "value") else cs
-            survivors = [t for t in survivors if ip(t).get("typical_check_size") == cs_str]
-        if (stages := _enum_values(f.get("stages_invested_any"))):
-            survivors = [t for t in survivors if set(ip(t).get("stages_invested", [])) & stages]
-        if (sectors := _enum_values(f.get("sectors_focused_any"))):
-            survivors = [t for t in survivors if set(ip(t).get("sectors_focused", [])) & sectors]
-        if (utah := f.get("utah_only")) is not None:
-            survivors = [t for t in survivors if ip(t).get("utah_only") == utah]
-        if (lead := f.get("lead_check")) is not None:
-            survivors = [t for t in survivors if ip(t).get("lead_check") == lead]
-        return survivors
+    def _filter_service_providers(kw: dict) -> list[Talent]:
+        return filters.filter_service_providers(
+            talents_pool, filters.ServiceProviderFilters.model_validate(kw)
+        )
 
-    def _filter_service_providers(f: dict) -> list[Talent]:
-        survivors = [t for t in talents_pool if t.role_category == RoleCategory.SERVICE_PROVIDER.value]
-        def sp(t: Talent) -> dict:
-            return t.service_provider_profile or {}
+    def _filter_students_interns(kw: dict) -> list[Talent]:
+        return filters.filter_students_interns(
+            talents_pool, filters.StudentInternFilters.model_validate(kw)
+        )
 
-        if (st := f.get("service_type")):
-            st_str = st.value if hasattr(st, "value") else st
-            survivors = [t for t in survivors if sp(t).get("service_type") == st_str]
-        if (stages := _enum_values(f.get("stages_served_any"))):
-            survivors = [t for t in survivors if set(sp(t).get("stages_served", [])) & stages]
-        if (sectors := _enum_values(f.get("sectors_served_any"))):
-            survivors = [t for t in survivors if set(sp(t).get("sectors_served", [])) & sectors]
-        if (friendly := f.get("startup_friendly_terms")) is not None:
-            survivors = [t for t in survivors if sp(t).get("startup_friendly_terms") == friendly]
-        return survivors
-
-    def _filter_students_interns(f: dict) -> list[Talent]:
-        survivors = [
-            t for t in talents_pool
-            if t.role_category in (RoleCategory.STUDENT.value, RoleCategory.INTERN.value)
-        ]
-        if (school := f.get("school")):
-            school_l = school.lower()
-            survivors = [
-                t for t in survivors
-                if any(school_l in (e.get("school", "") or "").lower() for e in (t.education or []))
-            ]
-        if (field := f.get("field_of_study")):
-            field_l = field.lower()
-            survivors = [
-                t for t in survivors
-                if any(field_l in (e.get("field", "") or "").lower() for e in (t.education or []))
-            ]
-        if (sectors := _enum_values(f.get("sectors_of_interest"))):
-            survivors = [t for t in survivors if set(t.sectors_of_interest) & sectors]
-        if (avail := f.get("availability")):
-            avail_str = avail.value if hasattr(avail, "value") else avail
-            survivors = [t for t in survivors if t.availability == avail_str]
-        return survivors
-
-    def _filter_startups(f: dict) -> list[Startup]:
-        survivors = list(startups_pool)
-        if (sector := f.get("sector")):
-            sector_str = sector.value if hasattr(sector, "value") else sector
-            survivors = [
-                s for s in survivors
-                if s.sector == sector_str or sector_str in s.sectors_secondary
-            ]
-        if (stages := _enum_values(f.get("stages"))):
-            survivors = [s for s in survivors if s.stage in stages]
-        if (rcats := _enum_values(f.get("role_categories_open_to_any"))):
-            survivors = [s for s in survivors if set(s.role_categories_open_to) & rcats]
-        if (seeking := f.get("seeking")):
-            seeking_l = seeking.lower() if isinstance(seeking, str) else seeking
-            if seeking_l == "investment":
-                survivors = [s for s in survivors if s.seeking_investment]
-            elif seeking_l == "services":
-                survivors = [s for s in survivors if s.services_needed]
-            elif seeking_l == "advisors":
-                survivors = [s for s in survivors if (s.advisor_slots_open or 0) > 0]
-            elif seeking_l == "board":
-                survivors = [s for s in survivors if (s.board_seats_open or 0) > 0]
-            elif seeking_l == "hiring":
-                survivors = [s for s in survivors if s.roles_needed]
-        if (services := _enum_values(f.get("services_needed_any"))):
-            survivors = [s for s in survivors if set(s.services_needed) & services]
-        if (state := f.get("location_state")):
-            survivors = [s for s in survivors if s.location_state == state or s.remote_ok]
-        if (missions := _str_lower_set(f.get("mission_keywords_any"))):
-            survivors = [s for s in survivors if {m.lower() for m in s.mission_keywords} & missions]
-        return survivors
+    def _filter_startups(kw: dict) -> list[Startup]:
+        return filters.filter_startups(
+            startups_pool, filters.StartupFilters.model_validate(kw)
+        )
 
     # Routing table for the unified `count` tool.
-    _filter_handlers: dict[str, Any] = {
+    _filter_handlers = {
         "operators": _filter_operators,
         "mentors": _filter_mentors,
         "advisors": _filter_advisors,

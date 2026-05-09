@@ -17,20 +17,17 @@ short "how do I run it" version.
 
 ## About the frontend
 
-**The `frontend/` directory is not a real product.** It's a single static
-`index.html` with vanilla JS — no build step, no framework, no package.json.
+The `frontend/` directory is a **work-in-progress** React 19 + Vite + TypeScript
+SPA, styled with Tailwind 4 and managed with pnpm. Page routing is plain
+`useState` — no router library yet. It is partially built: `Browse`, `Match`,
+`My Profile`, and `Join` (a 3-step onboarding wizard) are wired up against the
+real backend, but UX polish, error states, and several flows are still rough.
+Expect rough edges; this is not finished.
 
-Its only purpose is to give a **rough demonstration of what the backend can
-do**: list the seeded Utah talent and startups, create new ones, and run the
-matcher to see explainable match cards. Treat it as a developer poker for the
-API, not a finished UX. It is meant to be **scrapped and replaced** with a
-proper frontend project once the backend contract is solid.
-
-If a field, label, or layout in the demo looks weird, it's almost certainly
-because the field exists on the backend schema and was wired up directly
-without UX polish. The names and shapes come from
+Field names and shapes come straight from the backend Pydantic schemas in
 [backend/app/model/schema/](backend/app/model/schema/) and
-[backend/app/model/schema/enums.py](backend/app/model/schema/enums.py).
+[backend/app/model/schema/enums.py](backend/app/model/schema/enums.py) — if a
+label looks generated, that's because it is.
 
 ---
 
@@ -54,33 +51,17 @@ auto-generated Swagger UI if you want to drive the API directly.
 
 ```bash
 cd frontend
-python3 -m http.server 3000
+pnpm install
+pnpm dev
 ```
 
-Open <http://localhost:3000>. The header shows a green pill when the API is
-reachable; the API base URL is editable in the same header.
+Open <http://localhost:5173>. The footer shows whether the backend is reachable.
+Override the API base with `VITE_API_BASE_URL` if you're not running the
+backend on the default port.
 
-> **Why port 3000?** The backend's CORS allowlist
-> ([backend/app/core/config.py](backend/app/core/config.py)) trusts
-> `http://localhost:3000` and `http://localhost:5173`. Serve the static page
-> from one of those origins. Opening `index.html` via `file://` will be blocked
-> by CORS.
-
----
-
-## What the demo can do
-
-| Tab          | Hits                                                        | Use it for                                                  |
-| ------------ | ----------------------------------------------------------- | ----------------------------------------------------------- |
-| **Browse**   | `GET /api/v1/talent`, `GET /api/v1/startup`                 | See the seeded data; click a card for the detail view.      |
-| **Match**    | `POST /api/v1/match/{talent\|startup}/{id}` and `/compare`  | Pick "I am…", optionally filter by "Looking for…", see scored matches. |
-| **+ Person** | `POST /api/v1/talent`                                       | Form-driven create. Covers the common fields, not investor / service-provider sub-profiles. |
-| **+ Startup**| `POST /api/v1/startup`                                      | Same idea for startups.                                     |
-
-The match cards render the score, per-dimension breakdown, "why it matches"
-reasons, and any blockers (red-tinted when hard filters fail). Compare mode
-shows side-by-side results from every registered matcher — the matchers are
-pluggable, see [PLAN.md §2a](PLAN.md).
+The backend's CORS allowlist
+([backend/app/core/config.py](backend/app/core/config.py)) trusts
+`http://localhost:5173` and `http://localhost:3000`.
 
 ---
 
@@ -134,6 +115,338 @@ The 11 tools: `find_operators`, `find_mentors`, `find_advisors`,
 `find_students_interns`, `find_startups`, `get_talent`, `get_startup`,
 `count` — split by filter schema (one tool per match-flow), not one
 polymorphic `find_talent` with conditional fields.
+
+### `embedding` and `embedding_blended`
+
+Two semantic matchers backed by `sentence-transformers/all-MiniLM-L6-v2` —
+a 22M-parameter open-source model (Apache 2.0) that runs locally on CPU
+or Apple Silicon GPU, no API calls, no rate limits.
+
+**What gets embedded.** For each talent and startup we build one chunk of
+text from the structured profile (headline, role, sectors, skills, mission,
+bio for talent; one-liner, sector, required skills, mission, description
+for startup) and splice in any long-form fields from `*_profile_extension`
+when present (extended bio, highlights, resume-style detail, project
+descriptions). The model produces a 384-dim unit-normalized vector;
+similarity is plain cosine.
+
+**Two score formulas, same hard filters.** Both run rule_filter
+underneath for hard filters (availability, role, comp, location) and to
+populate the dimension breakdown the match card already renders. They
+diverge in how they compute the surfaced score:
+
+| Matcher              | Score                                       |
+|----------------------|---------------------------------------------|
+| `embedding`          | clamped cosine similarity                   |
+| `embedding_blended`  | `0.6 * cosine + 0.4 * rule_filter_score`    |
+
+When cosine ≥ 0.55, both inject a leading `"Strong semantic alignment
+(cosine 0.XX)"` reason; the rest are rule_filter's reasons unchanged.
+
+**Why two?** They surface different things:
+
+- **`rule_filter`** rewards explicit structured overlap — same sector
+  enum, salary band fits, location compatible.
+- **`embedding`** rewards *how people describe themselves and their work*.
+  A Salt Lake fintech operator whose bio mentions "regulatory compliance,
+  bank charters, and stablecoin treasury" can match a startup whose
+  description talks about "money-movement infrastructure" even when the
+  skill enums don't quite line up. Useful when the structured taxonomy
+  hasn't caught up to how the field actually talks.
+- **`embedding_blended`** is the practical default for ranking — the cosine
+  signal lifts well-described matches but rule_filter still tilts the
+  ordering toward candidates whose structured fields actually fit.
+
+`/match/.../compare` runs all four matchers in parallel so judges can see
+the spread on the same input.
+
+**Caching.** Embedding the corpus is the slow step (~10s for ~500 profiles
+on first run). Vectors are persisted to a `profile_embedding` table keyed
+on `(entity_type, entity_id, model_name)` with a `source_signature` (sha256
+of the constructed text). On read, the matcher hashes the freshly-built
+text and reuses the stored vector if the signature matches; otherwise it
+re-encodes and upserts. Edit a bio, the next match call notices and
+re-encodes that one row — everything else stays cached. After the first
+run, `/match/...?matcher=embedding*` returns in single-digit milliseconds.
+
+The model loads lazily on the first match call (not at app boot) so
+imports stay fast and tests don't pay the load cost. `model.encode(...)`
+is sync + CPU-bound, so it runs in `asyncio.to_thread` to keep `/compare`
+non-blocking. Implementation:
+[backend/app/provider/matching/embedding.py](backend/app/provider/matching/embedding.py),
+table:
+[backend/app/model/database/profile_embedding.py](backend/app/model/database/profile_embedding.py).
+
+---
+
+## Discovery API — "find me X" directory lookups
+
+`/match/*` answers *"who's the best startup for Marcus, with a full breakdown."*
+`/discover/*` answers *"give me the investors / mentors / peer operators / etc.,
+filtered."* Different jobs, different shapes.
+
+Two perspectives × eight targets = **16 endpoints**:
+
+```
+POST /api/v1/discover/from/{talent|startup}/{focal_id}/{target}
+```
+
+where `target` ∈ `operators`, `mentors`, `advisors`, `board_members`,
+`investors`, `service_providers`, `students_interns`, `startups`. Each takes
+a typed filter body (or `{}` for "no filter, just give me the network") and
+`?top_k=20`. Filter shapes mirror the agent's MCP tool signatures and live in
+[backend/app/provider/matching/filters.py](backend/app/provider/matching/filters.py).
+
+```bash
+# Find investors interested in a fundraising life-sciences startup
+curl -X POST http://127.0.0.1:8765/api/v1/discover/from/startup/$SID/investors?top_k=5 \
+  -H 'content-type: application/json' \
+  -d '{"sectors_focused_any":["life_sciences"], "stages_invested_any":["seed"], "utah_only":true}'
+
+# Find mentors a talent could plug into
+curl -X POST http://127.0.0.1:8765/api/v1/discover/from/talent/$TID/mentors?top_k=5 \
+  -H 'content-type: application/json' \
+  -d '{"sectors_of_interest":["life_sciences"]}'
+
+# Find startups currently hiring (from a talent's perspective)
+curl -X POST http://127.0.0.1:8765/api/v1/discover/from/talent/$TID/startups?top_k=5 \
+  -H 'content-type: application/json' \
+  -d '{"seeking":"hiring","stages":["seed","pre_seed"]}'
+
+# Find peer operators (talent → talent)
+curl -X POST http://127.0.0.1:8765/api/v1/discover/from/talent/$TID/operators?top_k=5 \
+  -H 'content-type: application/json' \
+  -d '{"sectors_of_interest":["life_sciences"]}'
+```
+
+Response shape ([backend/app/model/schema/discovery.py](backend/app/model/schema/discovery.py)):
+
+```json
+{
+  "focal_type": "startup",
+  "focal_id": "0e9274ea-…",
+  "target_type": "investors",
+  "matcher": "rule_filter",
+  "results": [
+    {"target": {…full talent…}, "score": 0.45, "top_reason": "Sector overlap: life_sciences"},
+    …
+  ],
+  "total": 5
+}
+```
+
+**Scoring**: when there's a (talent, startup) pair (talent→startup or
+startup→talent), the score comes from the same `RuleFilterMatcher` singleton
+`/match/*` uses — so a candidate's discovery score equals its match score.
+For peer flows (talent→talent, startup→startup) the score is `0.0` and
+results are alphabetical — the network filter has already narrowed; ranking
+is out of scope until a peer-matcher exists.
+
+**Vanilla only.** Discovery is rule_filter only by design — when the caller
+supplies structured filters, the agent's filter-iteration value disappears.
+For agentic narratives, hit `/match/*?matcher=agentic_filter`. See
+[PLAN.md §7a](PLAN.md) for the design rationale.
+
+The MCP server's filter wrappers and the discovery service share the same
+filter primitives in
+[backend/app/provider/matching/filters.py](backend/app/provider/matching/filters.py),
+so rule semantics never drift between the two surfaces.
+
+---
+
+## Extended profile (deferred-load detail view)
+
+Talent and startup rows on the matching path stay lean. Long-form content
+(extended bio, resume URL, hero/cover images, links, projects, highlights)
+lives in sibling `*_profile_extension` tables that the frontend loads on demand
+from a separate endpoint:
+
+```
+GET  /api/v1/talent/{id}/profile     404 if no extension row, else extension fields
+PUT  /api/v1/talent/{id}/profile     upsert the extension
+GET  /api/v1/startup/{id}/profile
+PUT  /api/v1/startup/{id}/profile
+```
+
+ORM models:
+[backend/app/model/database/talent_profile_extension.py](backend/app/model/database/talent_profile_extension.py),
+[backend/app/model/database/startup_profile_extension.py](backend/app/model/database/startup_profile_extension.py).
+
+Match responses do **not** include these fields — keeps `/match` cheap and the
+match-card payload predictable. Future agentic / embedding matchers can read
+the extended text directly from the DB without changing the wire contract.
+
+### Unified create — lean + extended + embedding in one POST
+
+`POST /api/v1/talent` and `POST /api/v1/startup` accept the lean profile fields
+*and* an optional `profile_extension` block in a single request. Both rows are
+written in one transaction (no orphans on partial failure) and the
+sentence-transformer vector is pre-computed in a FastAPI `BackgroundTasks` job
+so the response returns fast while the next `/match` call hits a warm cache.
+
+```bash
+curl -X POST http://127.0.0.1:8765/api/v1/talent \
+  -H 'content-type: application/json' \
+  -d '{
+    "name": "Jane Doe",
+    "email": "jane@example.com",
+    "headline": "Fractional CFO — life sciences",
+    "role_category": "executive",
+    "role_titles_seeking": ["cfo"],
+    "availability": "fractional",
+    "comp_expectation_type": "salary_plus_equity",
+    "location_city": "Salt Lake City",
+    "primary_network": "operator",
+    "profile_extension": {
+      "bio_extended": "18 years in life sciences finance...",
+      "image_url": "https://i.pravatar.cc/512?u=jane@example.com",
+      "highlights": ["1x exit", "Took diagnostics co through Series B"],
+      "projects": [{"title": "510(k) pre-sub generator", "description": "..."}]
+    }
+  }'
+# → 201 with both the talent and the saved profile_extension inline.
+#   Background task pre-computes the embedding (~50ms; first run loads the
+#   model, ~1–3s). If the embedding fails, the matcher will lazy-compute on
+#   first /match call — no user impact.
+```
+
+Response shape: [`TalentFullResponse`](backend/app/model/schema/talent.py) /
+[`StartupFullResponse`](backend/app/model/schema/startup.py) — the existing
+`TalentResponse` / `StartupResponse` plus a nullable `profile_extension`.
+Atomic transaction lives in
+[`TalentService.create_with_profile`](backend/app/service/talent_service.py)
+/ [`StartupService.create_with_profile`](backend/app/service/startup_service.py);
+embedding pre-warm helpers in
+[backend/app/provider/matching/embedding.py](backend/app/provider/matching/embedding.py)
+(`prewarm_talent_embedding` / `prewarm_startup_embedding`).
+
+Backwards compatible: callers that omit `profile_extension` keep behaving like
+the old endpoint — `profile_extension` comes back as `null`. The separate
+`PUT /{id}/profile` route is still there for editing the extension after the
+fact.
+
+### Seed data fills it in
+
+The seeder generates a `profile_extension` row for every talent (366) and
+startup (132) on first boot — extended bio synthesized from the lean fields,
+real working image URLs (`i.pravatar.cc`, `dicebear`, `picsum.photos` keyed on
+slug/email), per-entity stable RNG so the same person renders the same
+profile across reboots, and probabilistic optional fields (resume URL, github
+links, cover images at 50–85% fill rates) so the data doesn't look uniform.
+Independent pass: a DB seeded before this feature picks up extensions on the
+next boot. See
+[backend/app/seed/generator.py](backend/app/seed/generator.py)
+(`build_talent_extension` / `build_startup_extension`) and
+[backend/app/seed/utah_synthetic.py](backend/app/seed/utah_synthetic.py).
+
+---
+
+## Following + network score (PageRank)
+
+Talent can follow other talent or startups. We run **PageRank** over the
+follow graph and turn each person's score into a percentile bracket so they
+get a one-glance answer to "how connected am I?"
+
+### What's PageRank?
+
+PageRank is the algorithm Larry Page and Sergey Brin invented at Stanford to
+rank web pages — it's what made early Google work. The intuition is simple
+and surprisingly applies to people just as well as web pages:
+
+> **You are important if important people connect to you.**
+
+The score is computed by repeatedly redistributing "rank mass" along the
+edges of the graph. Concretely, each person's score is
+
+```
+PR(you) = (1 - d)/N  +  d · Σ over your followers f of  PR(f) / out_degree(f)
+```
+
+where `d = 0.85` (damping), `N` is the number of nodes, and `out_degree(f)` is
+how many people follower `f` is following. A few useful consequences:
+
+- **Your score depends on who follows you, not who you follow.** Following
+  more people doesn't inflate your own score.
+- **A follow from someone well-connected is worth more than a follow from
+  someone obscure.** A nod from a respected mentor with a large network beats
+  a nod from a brand-new account.
+- **Following too many people dilutes the rank you pass on.** If you follow
+  100 accounts, each one gets 1/100th of your influence.
+
+We follow the formulation taught in BYU ACME's [PageRank lab][byu-pagerank]
+including the standard dangling-node fix (rank from sinks gets redistributed
+uniformly, so rank doesn't leak out of the system). Implementation in
+[backend/app/service/pagerank_service.py](backend/app/service/pagerank_service.py).
+
+[byu-pagerank]: https://labs.acme.byu.edu/Volume1/PageRank/PageRank.html
+
+### Two graphs
+
+Both are computed and cached separately. The cache key is `(talent_count,
+startup_count, follow_edge_count)` — any mutation invalidates the cache and
+the next request recomputes.
+
+| Graph             | Nodes                                     | Edges                                          | Used for |
+|-------------------|-------------------------------------------|------------------------------------------------|----------|
+| `people_only`     | All talent rows (all 9 RoleCategories)    | talent → talent                                | Personal centrality among humans |
+| `full_ecosystem`  | All talent **and** all startups           | talent → talent + talent → startup             | Same plus "ecosystem attention" — also produces a score for startups |
+
+Including or excluding startup nodes doesn't change a person's relative rank
+much (talent → startup edges are sinks under standard PageRank — startups
+don't follow back), but exposing both lets us rank startups too in the
+`full_ecosystem` graph.
+
+### Brackets — "how connected are you?"
+
+A raw score isn't useful by itself. We turn it into a **percentile within
+the same role_category cohort** (mentors compared to mentors, students to
+students, etc.) so a student in the top of their cohort gets credit even if
+mentors as a group score higher in absolute terms. The percentile lands in
+one of four buckets:
+
+| Percentile | Bracket             | Reading                                                  |
+|------------|---------------------|----------------------------------------------------------|
+| 0–25       | **Limited network** | Most of the cohort has more inbound activity. Big upside if you start engaging. |
+| 25–50      | Growing network     | You're building. A few well-placed follows from active mentors / investors will jump you a bracket. |
+| 50–75      | Strong network      | Solidly connected — comparable to or better than half the cohort. |
+| 75–100     | **Highly connected**| Top quartile of your cohort. People look to you. |
+
+Startups get the same brackets, scored against all other startups in
+the `full_ecosystem` graph.
+
+### How it helps people improve
+
+The bracket isn't a vanity badge — the response carries the raw score, the
+rank within cohort, and the cohort size, so the frontend can show:
+
+- **Where you stand** — "Strong network — ranked 12 of 60 mentors."
+- **What moves the needle** — because PageRank weights by follower quality,
+  the practical advice is consistent: get followed by people who are
+  themselves well-followed (engaged mentors, active investors), and don't
+  fan out your own follows so wide that your outgoing influence is diluted.
+- **A direct comparison across graphs** — `people_only` vs `full_ecosystem`
+  lets a person see whether their connectivity comes from people or from
+  saving startups.
+
+### Endpoints
+
+```
+POST   /api/v1/talent/{id}/follow/talent/{target_id}     204 (idempotent)
+DELETE /api/v1/talent/{id}/follow/talent/{target_id}     204 (idempotent)
+POST   /api/v1/talent/{id}/follow/startup/{startup_id}   204
+DELETE /api/v1/talent/{id}/follow/startup/{startup_id}   204
+GET    /api/v1/talent/{id}/following                     {talent: [...], startups: [...]}
+GET    /api/v1/talent/{id}/followers                     [...] (talent followers)
+GET    /api/v1/talent/{id}/network-score                 score + brackets for both graphs
+GET    /api/v1/startup/{id}/followers                    talent who follow this startup
+GET    /api/v1/startup/{id}/network-score                full_ecosystem score only
+```
+
+The seeder generates a deterministic starter graph (~3,000 talent → talent
+edges + ~700 talent → startup edges) biased by role-pair affinity (students
+follow mentors more than the reverse, executives follow investors, etc.) and
+sector overlap. Same RNG seed every boot, so percentiles are stable across
+restarts.
 
 ---
 
@@ -241,7 +554,7 @@ Walk through this once when you clone the repo.
 3. **Products** tab → request access to **Sign In with LinkedIn using OpenID
    Connect**. This is self-serve and instant. Skip the others — they're gated.
 4. **Auth** tab → **Authorized redirect URLs**: add
-   `http://localhost:8000/api/v1/auth/linkedin/callback` (and a prod URL when
+   `http://localhost:8765/api/v1/auth/linkedin/callback` (and a prod URL when
    you deploy). Must be byte-identical to `LINKEDIN_REDIRECT_URI`.
 5. Copy **Client ID** and **Client Secret** from the same Auth tab.
 6. Generate an HMAC secret for the state cookie:
@@ -250,7 +563,7 @@ Walk through this once when you clone the repo.
    ```
    LINKEDIN_CLIENT_ID="..."
    LINKEDIN_CLIENT_SECRET="..."
-   LINKEDIN_REDIRECT_URI="http://localhost:8000/api/v1/auth/linkedin/callback"
+   LINKEDIN_REDIRECT_URI="http://localhost:8765/api/v1/auth/linkedin/callback"
    LINKEDIN_SCOPES="openid profile email"
    OAUTH_STATE_SECRET="<output of step 6>"
    FRONTEND_ONBOARD_URL="http://localhost:5173/onboard"
@@ -261,15 +574,15 @@ Walk through this once when you clone the repo.
 
 ```bash
 # 1. Start the OAuth dance in a browser:
-open http://localhost:8000/api/v1/auth/linkedin/login
+open http://localhost:8765/api/v1/auth/linkedin/login
 # Approve on LinkedIn → you'll land at FRONTEND_ONBOARD_URL?linkedin_handoff=<token>
 
 # 2. Pop the userinfo (browser request, or curl with the same token):
-curl 'http://localhost:8000/api/v1/auth/linkedin/handoff?token=<token>'
+curl 'http://localhost:8765/api/v1/auth/linkedin/handoff?token=<token>'
 # → {"sub":"...", "name":"...", "email":"...", "picture":"...", ...}
 
 # 3. Run the agent end-to-end (skip steps 1–2 if you just want to test the agent):
-curl -X POST http://localhost:8000/api/v1/onboard/agent \
+curl -X POST http://localhost:8765/api/v1/onboard/agent \
   -H 'content-type: application/json' \
   -d '{
     "linkedin_userinfo": {
@@ -284,7 +597,7 @@ curl -X POST http://localhost:8000/api/v1/onboard/agent \
 # → {"talent_id":"<uuid>", "talent": {...full Talent...}, "agent_notes": "Saved Jane's profile..."}
 
 # 4. Confirm the row exists:
-curl http://localhost:8000/api/v1/talent/<talent_id>
+curl http://localhost:8765/api/v1/talent/<talent_id>
 ```
 
 ### What's deferred
@@ -301,10 +614,8 @@ curl http://localhost:8000/api/v1/talent/<talent_id>
 
 ## What the demo does **not** do
 
-- No auth, no sessions, no users.
-- No edit / delete — only list, get, create.
-- No investor / service-provider sub-profile inputs in the create form.
-- No real styling system — handwritten CSS, will not survive contact with
-  designers.
-
-When you build the real frontend, throw `frontend/` away.
+- No auth, no sessions, no real users — `My Profile` simulates a current user
+  by picking the second seeded talent.
+- No edit / delete on talent or startup core records — only list, get, create
+  (extended profile rows do support `PUT`).
+- No investor / service-provider sub-profile inputs in the Join wizard yet.
