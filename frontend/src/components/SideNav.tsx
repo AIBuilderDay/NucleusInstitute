@@ -5,6 +5,13 @@ import type { Person, Startup } from "../types";
 import { SECTOR_LABEL, STAGE_LABEL, ROLE_CATEGORY_LABEL } from "../labels";
 import { exportCsv, exportPdf } from "../export";
 
+export interface OidcUserBadge {
+  name: string;
+  email?: string;
+  picture: string;
+  provider: "linkedin" | "google";
+}
+
 interface SideNavProps {
   route: Route;
   setRoute: (r: Route) => void;
@@ -14,6 +21,8 @@ interface SideNavProps {
   onSelectPerson: (p: Person) => void;
   onSelectStartup: (s: Startup) => void;
   minimal?: boolean;
+  oidcUser?: OidcUserBadge | null;
+  onSignOut?: () => void;
 }
 
 type SearchResult =
@@ -21,9 +30,12 @@ type SearchResult =
   | { kind: "startup"; item: Startup }
   | { kind: "category"; label: string; type: string };
 
-const NAV_ITEMS: ReadonlyArray<{ id: Route; label: string; icon: "search" | "filter" | "star" | "topology" }> = [
+
+const NAV_ITEMS: ReadonlyArray<{ id: Route; label: string; icon: "search" | "filter" | "star" | "globe" | "topology" }> = [
+
   { id: "explore", label: "Explore", icon: "search" },
   { id: "match", label: "Match", icon: "filter" },
+  { id: "ecosystem", label: "Ecosystem", icon: "globe" },
   { id: "profile", label: "Profile", icon: "star" },
   { id: "topology", label: "Topology", icon: "topology" },
 ];
@@ -41,6 +53,13 @@ function NavIcon({ type, active }: { type: string; active?: boolean }) {
     return (
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
         <path d="M2 3h10M4 7h6M6 11h2" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    );
+  if (type === "globe")
+    return (
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <circle cx="7" cy="7" r="5" stroke={color} strokeWidth="1.5" />
+        <path d="M2 7h10M7 2c1.8 2.2 1.8 7.8 0 10M7 2c-1.8 2.2-1.8 7.8 0 10" stroke={color} strokeWidth="1.2" strokeLinecap="round" />
       </svg>
     );
   if (type === "gear")
@@ -125,6 +144,8 @@ export function SideNav({
   onSelectPerson,
   onSelectStartup,
   minimal = false,
+  oidcUser = null,
+  onSignOut,
 }: SideNavProps) {
   const initials = currentUser
     ? currentUser.name
@@ -364,7 +385,46 @@ export function SideNav({
           >
             Join / Re-onboard
           </button>
-          {currentUser && (
+          {oidcUser ? (
+            <div className="flex items-center gap-10 py-8 px-12 rounded-[6px] bg-pearl">
+              {oidcUser.picture ? (
+                <img
+                  src={oidcUser.picture}
+                  alt={oidcUser.name}
+                  className="w-32 h-32 rounded-full object-cover shrink-0"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).style.display = "none";
+                  }}
+                />
+              ) : (
+                <div className="w-32 h-32 rounded-full bg-graphite text-white grid place-items-center font-display font-medium text-[12px] shrink-0">
+                  {oidcUser.name
+                    .split(/\s+/)
+                    .filter(Boolean)
+                    .slice(0, 2)
+                    .map((s) => s[0]?.toUpperCase() ?? "")
+                    .join("")}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="text-[12px] text-graphite font-medium whitespace-nowrap overflow-hidden text-ellipsis">
+                  {oidcUser.name}
+                </div>
+                <div className="font-mono text-[10px] text-graphite-muted uppercase tracking-[1px]">
+                  {oidcUser.provider}
+                </div>
+              </div>
+              {onSignOut && (
+                <button
+                  onClick={onSignOut}
+                  className="text-[10px] text-graphite-muted hover:text-graphite bg-transparent border-0 cursor-pointer p-0 shrink-0"
+                  aria-label="Sign out"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          ) : currentUser && (
             <div
               className="flex items-center gap-10 py-8 px-12 rounded-[6px] bg-pearl"
             >

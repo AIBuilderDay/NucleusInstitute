@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
@@ -108,3 +108,55 @@ class OnboardAgentResponse(BaseModel):
             "it verbatim if backend parsing produced incomplete structured fields."
         ),
     )
+
+
+# -----------------------------------------------------------------------------
+# Interest inference (Ecosystem page) — read-only Claude call after sign-in.
+# Takes the LinkedIn userinfo, runs Claude with web_search to surface the user's
+# public footprint, returns inferred categories the frontend pre-fills into the
+# "Is this you?" confirmation popup. NO Talent row is written here.
+# -----------------------------------------------------------------------------
+
+
+class InferInterestsRequest(BaseModel):
+    """Body for POST /onboard/infer-interests."""
+
+    linkedin_userinfo: LinkedInUserInfo
+
+
+class InferInterestsResponse(BaseModel):
+    """Categories Claude inferred from the user's public footprint.
+
+    Field names mirror the frontend's `InferredInterests` type (camelCase) so
+    the JSON wire shape is identical and no client-side rename is needed.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    city: str = ""
+    sectors: list[str] = Field(default_factory=list)
+    stages: list[str] = Field(default_factory=list)
+    lookingFor: list[str] = Field(default_factory=lambda: ["both"])
+    evidence: list[str] = Field(default_factory=list)
+    confidence: Literal["low", "medium", "high"] = "low"
+
+
+class ExtractKeywordsRequest(BaseModel):
+    """Body for POST /onboard/extract-keywords.
+
+    Free-form prose from the user (resume blurb, 'anything else' textbox,
+    descriptions of what they're working on). The agent extracts concise
+    matchable tags so the matcher can score state resources / startups
+    against richer signal than just sector + stage.
+    """
+
+    text: str = Field(min_length=1, max_length=4000)
+
+
+class ExtractKeywordsResponse(BaseModel):
+    """Returns 3-10 lowercase keywords drawn from the input text. Each is a
+    short noun phrase suitable for substring matching against resource titles
+    + descriptions (e.g. 'fda', 'clinical trials', 'rural', 'workforce').
+    """
+
+    keywords: list[str] = Field(default_factory=list)

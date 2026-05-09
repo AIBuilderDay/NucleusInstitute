@@ -8,6 +8,7 @@ interface TopNavProps {
 const TABS: ReadonlyArray<{ id: Route; label: string }> = [
   { id: "explore", label: "Explore" },
   { id: "match", label: "Match" },
+  { id: "ecosystem", label: "Ecosystem" },
   { id: "profile", label: "My Profile" },
   { id: "onboard", label: "Join" },
 ];

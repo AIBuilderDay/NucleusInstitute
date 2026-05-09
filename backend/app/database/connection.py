@@ -25,6 +25,23 @@ from app.core.config import settings
 logger = settings.logger
 
 
+def _normalize_database_url(url_str: str) -> str:
+    """Accept either a SQLAlchemy URL or a bare SQLite filesystem path.
+
+    - Strips surrounding whitespace and `"…"`/`'…'` quotes (deploy platforms
+      sometimes leave them behind).
+    - If the result has no `://` scheme, treats it as a SQLite path and wraps
+      it as `sqlite+aiosqlite:///{path}` (3 slashes + path; an absolute path's
+      leading `/` makes that 4 slashes total, which is correct).
+    """
+    cleaned = url_str.strip()
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in ("'", '"'):
+        cleaned = cleaned[1:-1]
+    if "://" not in cleaned:
+        cleaned = f"sqlite+aiosqlite:///{cleaned}"
+    return cleaned
+
+
 def _ensure_sqlite_parent_dir(url_str: str) -> None:
     url = make_url(url_str)
     if url.get_backend_name() != "sqlite":
@@ -36,11 +53,14 @@ def _ensure_sqlite_parent_dir(url_str: str) -> None:
 
 
 def _create_engine() -> AsyncEngine:
-    _ensure_sqlite_parent_dir(settings.database_url)
-    logger.info(f"Initializing async DB connection: {settings.database_url}")
-    # SQLite ignores Postgres-style pool args; connect_args sets isolation_level
-    # to None (autocommit) so SQLAlchemy controls transactions explicitly.
-    return create_async_engine(settings.database_url, echo=False)
+    raw = settings.database_url
+    normalized = _normalize_database_url(raw)
+    if normalized != raw:
+        logger.info(f"Normalized DATABASE_URL: {raw!r} -> {normalized!r}")
+    else:
+        logger.info(f"Initializing async DB connection: {normalized!r}")
+    _ensure_sqlite_parent_dir(normalized)
+    return create_async_engine(normalized, echo=False)
 
 
 engine: AsyncEngine = _create_engine()
