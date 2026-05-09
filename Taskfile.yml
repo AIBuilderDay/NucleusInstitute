@@ -32,6 +32,17 @@ tasks:
     cmds:
       - uv run uvicorn app.main:app --reload --host 127.0.0.1 --port {{.EXTERNAL_PORT}}
 
+  up:
+    desc: "Build + start backend and frontend in Docker (detached)"
+    deps: [env:generate]
+    cmds:
+      - docker compose up --build -d
+
+  logs:
+    desc: "Tail combined backend + frontend container logs"
+    cmds:
+      - docker compose logs -f
+
   clean:
     desc: "Remove Python caches"
     cmds:
