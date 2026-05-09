@@ -8,9 +8,15 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_ROOT_ENV = _REPO_ROOT / ".env"
+
+
 class Settings(BaseSettings):
+    # Single shared env at the repo root — same file backend/ reads. Written
+    # by `task env:generate` from the NUCLEUS 1Password vault.
     model_config = SettingsConfigDict(
-        env_file=str(Path(__file__).resolve().parents[1] / ".env"),
+        env_file=str(_ROOT_ENV),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",

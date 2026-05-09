@@ -8,16 +8,21 @@ Mirrors the HEAL FastAPI template (`fastapi-1password-template`):
 """
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 from python_sentry_logger_wrapper import get_logger
 
+# Single shared env at the repo root — written by `task env:generate`.
+# Both backend and autopilot read this same file so config never drifts.
+_ROOT_ENV = Path(__file__).resolve().parents[3] / ".env"
+
 
 class Settings(BaseSettings):
     model_config = ConfigDict(
-        env_file=".env",
+        env_file=str(_ROOT_ENV),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
