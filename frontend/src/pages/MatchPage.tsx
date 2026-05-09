@@ -21,7 +21,7 @@ import {
   STAGES,
   STAGE_LABEL,
 } from "../labels";
-import { Avatar, DimensionBars, Field, ScoreArc, selectStyle } from "../components/ui";
+import { Avatar, DimensionBars, Field, ScoreArc, selectClass } from "../components/ui";
 
 interface MatchPageProps {
   people: Person[];
@@ -29,6 +29,8 @@ interface MatchPageProps {
   initialPerson: Person | null;
   initialStartup: Startup | null;
   currentUser: Person;
+  connectedPersonIds: Set<string>;
+  connectedStartupIds: Set<string>;
 }
 
 type Direction = "person_to_startups" | "startup_to_people";
@@ -76,6 +78,8 @@ export function MatchPage({
   initialPerson,
   initialStartup,
   currentUser,
+  connectedPersonIds,
+  connectedStartupIds,
 }: MatchPageProps) {
   const [direction, setDirection] = useState<Direction>(
     initialStartup ? "startup_to_people" : "person_to_startups",
@@ -93,6 +97,7 @@ export function MatchPage({
   const [intentFilter, setIntentFilter] = useState<Intent[]>([]);
   const [roleFilter, setRoleFilter] = useState<RoleCategory[]>([]);
   const [networkFilter, setNetworkFilter] = useState<Network[]>([]);
+  const [connectedOnly, setConnectedOnly] = useState(false);
   const [results, setResults] = useState<MatchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -151,6 +156,7 @@ export function MatchPage({
       if (direction === "person_to_startups") {
         const s = m.startup;
         if (!s) return false;
+        if (connectedOnly && !connectedStartupIds.has(s.id)) return false;
         if (sectorFilter.length) {
           const sectors = [s.sector, ...(s.sectors_secondary ?? [])];
           if (!sectors.some((x) => sectorFilter.includes(x))) return false;
@@ -161,6 +167,7 @@ export function MatchPage({
       } else {
         const p = m.person;
         if (!p) return false;
+        if (connectedOnly && !connectedPersonIds.has(p.id)) return false;
         if (roleFilter.length && !roleFilter.includes(p.role_category)) return false;
         if (networkFilter.length && !networkFilter.includes(p.primary_network)) return false;
         if (sectorFilter.length && !p.sectors_of_interest.some((s) => sectorFilter.includes(s)))
@@ -168,7 +175,7 @@ export function MatchPage({
       }
       return true;
     });
-  }, [results, direction, sectorFilter, stageFilter, intentFilter, roleFilter, networkFilter]);
+  }, [results, direction, sectorFilter, stageFilter, intentFilter, roleFilter, networkFilter, connectedOnly, connectedPersonIds, connectedStartupIds]);
 
   const runCompare = async () => {
     if (!personId && !startupId) return;
@@ -204,41 +211,18 @@ export function MatchPage({
       intentFilter.length +
       roleFilter.length +
       networkFilter.length >
-    0;
+      0 || connectedOnly;
 
   return (
     <div>
-      <div
-        style={{
-          maxWidth: 1440,
-          margin: "0 auto",
-          padding: "28px 32px 64px",
-          display: "grid",
-          gridTemplateColumns: "380px 1fr",
-          gap: 24,
-        }}
-      >
-        <aside
-          className="card"
-          style={{ padding: 22, alignSelf: "start", position: "sticky", top: 88 }}
-        >
+      <div className="max-w-[1440px] mx-auto pt-28 px-32 pb-64 grid grid-cols-[380px_1fr] gap-24">
+        <aside className="card p-22 self-start sticky top-88">
           <div className="tiny-caps">Find Matches</div>
-          <h3
-            className="display"
-            style={{ margin: "6px 0 18px", fontSize: 24, color: "var(--nucleus-blue)" }}
-          >
+          <h3 className="font-display mt-6 mb-18 text-[24px] text-nucleus-blue">
             Configure
           </h3>
 
-          <div
-            style={{
-              display: "flex",
-              background: "var(--whisper-200)",
-              borderRadius: 8,
-              padding: 3,
-              marginBottom: 18,
-            }}
-          >
+          <div className="flex bg-pearl-200 rounded-[8px] p-3 mb-18">
             {([
               { id: "person_to_startups", l: "Find startups" },
               { id: "startup_to_people", l: "Find people" },
@@ -246,15 +230,11 @@ export function MatchPage({
               <button
                 key={t.id}
                 onClick={() => setDirection(t.id)}
-                style={{
-                  flex: 1,
-                  padding: "7px 10px",
-                  borderRadius: 6,
-                  fontSize: 12,
-                  fontWeight: 500,
-                  background: direction === t.id ? "var(--white)" : "transparent",
-                  color: direction === t.id ? "var(--nucleus-blue)" : "var(--slate)",
-                }}
+                className={`flex-1 py-7 px-10 rounded-[6px] text-[12px] font-medium ${
+                  direction === t.id
+                    ? "bg-white text-nucleus-blue"
+                    : "bg-transparent text-graphite-muted"
+                }`}
               >
                 {t.l}
               </button>
@@ -266,7 +246,7 @@ export function MatchPage({
               <select
                 value={personId}
                 onChange={(e) => setPersonId(e.target.value)}
-                style={selectStyle}
+                className={selectClass}
               >
                 {people.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -280,7 +260,7 @@ export function MatchPage({
               <select
                 value={startupId}
                 onChange={(e) => setStartupId(e.target.value)}
-                style={selectStyle}
+                className={selectClass}
               >
                 {startups.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -291,11 +271,29 @@ export function MatchPage({
             </Field>
           )}
 
+          <Field
+            label="Connected"
+            hint={`Only show ${isPersonDir ? "startups" : "people"} you connected with on Explore.`}
+          >
+            <div className="flex gap-6 items-center">
+              <ToggleChip
+                on={connectedOnly}
+                onClick={() => setConnectedOnly((v) => !v)}
+                tone="copper"
+              >
+                Connected only
+                {isPersonDir
+                  ? ` (${connectedStartupIds.size})`
+                  : ` (${connectedPersonIds.size})`}
+              </ToggleChip>
+            </div>
+          </Field>
+
           {/* — Direction-specific filters — */}
           {isPersonDir && (
             <>
               <Field label="Show startups that are…" hint="Multiple OK. Empty = any opportunity.">
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                <div className="flex flex-wrap gap-6">
                   {INTENTS.map((i) => (
                     <ToggleChip
                       key={i}
@@ -309,7 +307,7 @@ export function MatchPage({
                 </div>
               </Field>
               <Field label="Stage" hint="Optional.">
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                <div className="flex flex-wrap gap-6">
                   {STAGES.map((s) => (
                     <ToggleChip
                       key={s}
@@ -327,7 +325,7 @@ export function MatchPage({
           {!isPersonDir && (
             <>
               <Field label="Looking for…" hint="Filter results by role category.">
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                <div className="flex flex-wrap gap-6">
                   {ROLE_CATEGORIES.map((r) => (
                     <ToggleChip
                       key={r}
@@ -341,7 +339,7 @@ export function MatchPage({
                 </div>
               </Field>
               <Field label="Network" hint="Self-declared Nucleus bucket.">
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                <div className="flex flex-wrap gap-6">
                   {NETWORKS.map((n) => (
                     <ToggleChip
                       key={n}
@@ -360,7 +358,7 @@ export function MatchPage({
             label={isPersonDir ? "Sector" : "Sector interest"}
             hint="Optional. Empty = all."
           >
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            <div className="flex flex-wrap gap-6">
               {SECTORS.map((s) => (
                 <ToggleChip
                   key={s}
@@ -374,16 +372,16 @@ export function MatchPage({
           </Field>
 
           <Field label="Top K">
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div className="flex items-center gap-12">
               <input
                 type="range"
                 min={3}
                 max={20}
                 value={topK}
                 onChange={(e) => setTopK(parseInt(e.target.value, 10))}
-                style={{ flex: 1 }}
+                className="flex-1"
               />
-              <span className="mono" style={{ minWidth: 24, textAlign: "right" }}>
+              <span className="font-mono min-w-24 text-right">
                 {topK}
               </span>
             </div>
@@ -393,7 +391,7 @@ export function MatchPage({
             <select
               value={matcher}
               onChange={(e) => setMatcher(e.target.value)}
-              style={selectStyle}
+              className={selectClass}
             >
               <option value="">(default)</option>
               <option value="rule_filter">rule_filter</option>
@@ -402,8 +400,8 @@ export function MatchPage({
             </select>
           </Field>
 
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-            <button className="btn btn-primary" style={{ flex: 1 }}>
+          <div className="flex gap-8 mt-8">
+            <button className="btn btn-primary flex-1">
               Find matches
             </button>
             <button className="btn btn-ghost" onClick={runCompare}>
@@ -413,55 +411,39 @@ export function MatchPage({
 
           {filtersActive && (
             <button
-              className="btn btn-ghost"
-              style={{ marginTop: 10, width: "100%", fontSize: 12 }}
+              className="btn btn-ghost mt-10 w-full text-[12px]"
               onClick={() => {
                 setSectorFilter([]);
                 setStageFilter([]);
                 setIntentFilter([]);
                 setRoleFilter([]);
                 setNetworkFilter([]);
+                setConnectedOnly(false);
               }}
             >
               Clear filters
             </button>
           )}
 
-          <div
-            style={{
-              marginTop: 18,
-              padding: "12px 14px",
-              background: "var(--whisper-50)",
-              borderRadius: 8,
-              border: "1px solid var(--color-border-soft)",
-            }}
-          >
+          <div className="mt-18 py-12 px-14 bg-pearl rounded-[8px] border border-pearl-200">
             <div className="tiny-caps">Querying for</div>
             {isPersonDir && me && (
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+              <div className="flex items-center gap-10 mt-8">
                 <Avatar name={me.name} size={36} />
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500 }}>{me.name}</div>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: "var(--slate)",
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}
-                  >
+                <div className="min-w-0">
+                  <div className="text-[13px] font-medium">{me.name}</div>
+                  <div className="text-[11px] text-graphite-muted whitespace-nowrap overflow-hidden text-ellipsis">
                     {me.headline}
                   </div>
                 </div>
               </div>
             )}
             {!isPersonDir && su && (
-              <div style={{ marginTop: 8 }}>
-                <div className="display" style={{ fontSize: 18, color: "var(--nucleus-blue)" }}>
+              <div className="mt-8">
+                <div className="font-display text-[18px] text-nucleus-blue">
                   {su.name}
                 </div>
-                <div style={{ fontSize: 12, color: "var(--slate)" }}>{su.one_liner}</div>
+                <div className="text-[12px] text-graphite-muted">{su.one_liner}</div>
               </div>
             )}
           </div>
@@ -469,16 +451,7 @@ export function MatchPage({
 
         <main>
           {error && (
-            <div
-              style={{
-                padding: "14px 18px",
-                borderRadius: 8,
-                background: "#fbe8e0",
-                color: "#8a3a3a",
-                fontSize: 13,
-                marginBottom: 14,
-              }}
-            >
+            <div className="py-14 px-18 rounded-[8px] bg-[#fbe8e0] text-[#8a3a3a] text-[13px] mb-14">
               ⚠ Match request failed: {error}
             </div>
           )}
@@ -489,45 +462,21 @@ export function MatchPage({
 
           {!compare && results && (
             <>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "baseline",
-                  justifyContent: "space-between",
-                  marginBottom: 14,
-                  flexWrap: "wrap",
-                  gap: 8,
-                }}
-              >
-                <h2
-                  className="display"
-                  style={{ fontSize: 26, color: "var(--nucleus-blue)", margin: 0 }}
-                >
+              <div className="flex items-baseline justify-between mb-14 flex-wrap gap-8">
+                <h2 className="font-display text-[26px] text-nucleus-blue m-0">
                   {displayedMatches.length}{" "}
                   {filtersActive ? `of ${results.matches.length} ` : ""}ranked matches
                 </h2>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div className="flex items-center gap-10">
                   <span className="tiny-caps">Source</span>
-                  <span
-                    className="mono"
-                    style={{
-                      fontSize: 11,
-                      padding: "3px 8px",
-                      borderRadius: 999,
-                      background: "var(--copper-faint)",
-                      color: "#8a5e1f",
-                    }}
-                  >
+                  <span className="font-mono text-[11px] py-3 px-8 rounded-full bg-gold-faint text-[#8a5e1f]">
                     LIVE BACKEND
                   </span>
                 </div>
               </div>
 
               {displayedMatches.length === 0 && (
-                <div
-                  className="card"
-                  style={{ padding: 24, color: "var(--slate)", fontSize: 13.5 }}
-                >
+                <div className="card p-24 text-graphite-muted text-[13.5px]">
                   No matches passed the active filters. Try clearing one or two of them.
                 </div>
               )}
@@ -558,21 +507,17 @@ interface ToggleChipProps {
 }
 
 function ToggleChip({ on, onClick, tone = "blue", children }: ToggleChipProps) {
-  const onColor = tone === "copper" ? "var(--copper)" : "var(--nucleus-blue)";
-  const onBg = tone === "copper" ? "var(--copper-faint)" : "var(--blue-100)";
-  const onText = tone === "copper" ? "#8a5e1f" : "var(--nucleus-blue)";
+  const isCopper = tone === "copper";
   return (
     <button
       onClick={onClick}
-      style={{
-        padding: "5px 10px",
-        borderRadius: 999,
-        fontSize: 11.5,
-        fontWeight: 500,
-        border: `1px solid ${on ? onColor : "var(--color-border)"}`,
-        background: on ? onBg : "var(--white)",
-        color: on ? onText : "var(--charcoal)",
-      }}
+      className={`py-5 px-10 rounded-full text-[11.5px] font-medium border ${
+        on
+          ? isCopper
+            ? "border-gold bg-gold-faint text-[#8a5e1f]"
+            : "border-nucleus-blue bg-blue-100 text-nucleus-blue"
+          : "border-pearl-300 bg-white text-graphite"
+      }`}
     >
       {children}
     </button>
@@ -595,42 +540,26 @@ function MatchCard({ match, index, direction, expanded, onToggle }: MatchCardPro
 
   return (
     <div
-      className="card fade-in"
-      style={{
-        padding: 20,
-        marginBottom: 12,
-        opacity: blocked ? 0.66 : 1,
-        borderColor: blocked ? "var(--whisper-300)" : "var(--color-border-soft)",
-      }}
+      className={`card fade-in p-20 mb-12 ${blocked ? "opacity-66 border-pearl-300" : "border-pearl-200"}`}
     >
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "auto 1fr auto",
-          gap: 18,
-          alignItems: "flex-start",
-        }}
-      >
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-          <span className="mono" style={{ fontSize: 11, color: "var(--slate-light)" }}>
+      <div className="grid grid-cols-[auto_1fr_auto] gap-18 items-start">
+        <div className="flex flex-col items-center gap-6">
+          <span className="font-mono text-[11px] text-graphite-light">
             #{String(index).padStart(2, "0")}
           </span>
           <ScoreArc score={match.score} />
         </div>
 
-        <div style={{ minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+        <div className="min-w-0">
+          <div className="flex items-baseline gap-10 flex-wrap">
             <span
-              className="display"
-              style={{
-                fontSize: 22,
-                fontWeight: 500,
-                color: isStartup ? "var(--nucleus-blue)" : "var(--charcoal)",
-              }}
+              className={`font-display text-[22px] font-medium ${
+                isStartup ? "text-nucleus-blue" : "text-graphite"
+              }`}
             >
               {target.name}
             </span>
-            <span style={{ fontSize: 12, color: "var(--slate)" }}>
+            <span className="text-[12px] text-graphite-muted">
               ·{" "}
               {isStartup
                 ? `${SECTOR_LABEL[(target as Startup).sector]} · ${STAGE_LABEL[(target as Startup).stage]} · ${target.location_city}`
@@ -638,46 +567,37 @@ function MatchCard({ match, index, direction, expanded, onToggle }: MatchCardPro
             </span>
           </div>
           {!isStartup && (
-            <div style={{ fontSize: 12, color: "var(--slate)", marginTop: 2 }}>
+            <div className="text-[12px] text-graphite-muted mt-2">
               {target.location_city} · {(target as Person).years_experience}y
             </div>
           )}
           {isStartup && (
-            <div style={{ fontSize: 13.5, color: "var(--charcoal)", marginTop: 6 }}>
+            <div className="text-[13.5px] text-graphite mt-6">
               {(target as Startup).one_liner}
             </div>
           )}
 
           {match.reasons.length > 0 && (
-            <ul
-              style={{
-                margin: "12px 0 6px",
-                paddingLeft: 0,
-                listStyle: "none",
-                display: "flex",
-                flexDirection: "column",
-                gap: 5,
-              }}
-            >
+            <ul className="mt-12 mb-6 pl-0 list-none flex flex-col gap-5">
               {match.reasons.slice(0, expanded ? 8 : 3).map((r, i) => (
                 <li
                   key={i}
-                  style={{ fontSize: 13, color: "var(--charcoal)", display: "flex", gap: 8 }}
+                  className="text-[13px] text-graphite flex gap-8"
                 >
-                  <span style={{ color: "var(--copper)", fontWeight: 600 }}>+</span>
+                  <span className="text-gold font-semibold">+</span>
                   <span>{r}</span>
                 </li>
               ))}
             </ul>
           )}
           {match.blockers.length > 0 && (
-            <ul style={{ margin: "6px 0 0", paddingLeft: 0, listStyle: "none" }}>
+            <ul className="mt-6 mb-0 pl-0 list-none">
               {match.blockers.map((b, i) => (
                 <li
                   key={i}
-                  style={{ fontSize: 13, color: "#8a3a3a", display: "flex", gap: 8 }}
+                  className="text-[13px] text-[#8a3a3a] flex gap-8"
                 >
-                  <span style={{ fontWeight: 600 }}>✕</span>
+                  <span className="font-semibold">✕</span>
                   <span>{b}</span>
                 </li>
               ))}
@@ -685,18 +605,17 @@ function MatchCard({ match, index, direction, expanded, onToggle }: MatchCardPro
           )}
         </div>
 
-        <div style={{ width: 240, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div className="w-240 flex flex-col gap-10">
           {expanded && <DimensionBars dims={match.dimension_scores} />}
-          <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
+          <div className="flex gap-6 justify-end flex-wrap">
             <button
               onClick={onToggle}
-              className="btn btn-ghost"
-              style={{ padding: "6px 12px", fontSize: 12 }}
+              className="btn btn-ghost py-6 px-12 text-[12px]"
             >
               {expanded ? "Less" : "Breakdown"}
             </button>
             {!blocked && (
-              <button className="btn btn-primary" style={{ padding: "6px 12px", fontSize: 12 }}>
+              <button className="btn btn-primary py-6 px-12 text-[12px]">
                 Introduce →
               </button>
             )}
@@ -718,78 +637,46 @@ function CompareResults({
   const isStartup = direction === "person_to_startups";
   return (
     <div>
-      <h2
-        className="display"
-        style={{ fontSize: 26, color: "var(--nucleus-blue)", margin: "0 0 6px" }}
-      >
+      <h2 className="font-display text-[26px] text-nucleus-blue mt-0 mb-6">
         Side-by-side
       </h2>
-      <p style={{ color: "var(--slate)", fontSize: 13.5, marginTop: 0, marginBottom: 18 }}>
+      <p className="text-graphite-muted text-[13.5px] mt-0 mb-18">
         Same query. Every registered matcher. Compare top picks across rule-based, embedding,
         and agentic providers.
       </p>
       <div
+        className="grid gap-14"
         style={{
-          display: "grid",
           gridTemplateColumns: `repeat(${Math.max(1, matchers.length)}, 1fr)`,
-          gap: 14,
         }}
       >
         {matchers.map((m) => (
-          <div key={m} className="card" style={{ padding: 14 }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "baseline",
-                justifyContent: "space-between",
-                marginBottom: 10,
-              }}
-            >
-              <span className="display" style={{ fontSize: 15, color: "var(--nucleus-blue)" }}>
+          <div key={m} className="card p-14">
+            <div className="flex items-baseline justify-between mb-10">
+              <span className="font-display text-[15px] text-nucleus-blue">
                 {m}
               </span>
-              <span className="mono" style={{ fontSize: 10, color: "var(--slate-light)" }}>
+              <span className="font-mono text-[10px] text-graphite-light">
                 top {compare.by_matcher[m]?.length ?? 0}
               </span>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div className="flex flex-col gap-8">
               {(compare.by_matcher[m] ?? []).slice(0, 6).map((mm, i) => {
                 const t = isStartup ? mm.startup : mm.person;
                 if (!t) return null;
                 return (
                   <div
                     key={`${m}-${i}`}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "24px 1fr auto",
-                      gap: 8,
-                      alignItems: "center",
-                      padding: "8px 10px",
-                      background: "var(--whisper-50)",
-                      borderRadius: 6,
-                    }}
+                    className="grid grid-cols-[24px_1fr_auto] gap-8 items-center py-8 px-10 bg-pearl rounded-[6px]"
                   >
-                    <span className="mono" style={{ fontSize: 10.5, color: "var(--slate-light)" }}>
+                    <span className="font-mono text-[10.5px] text-graphite-light">
                       #{i + 1}
                     </span>
-                    <span
-                      style={{
-                        fontSize: 12.5,
-                        fontWeight: 500,
-                        color: "var(--charcoal)",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
+                    <span className="text-[12.5px] font-medium text-graphite overflow-hidden text-ellipsis whitespace-nowrap">
                       {t.name}
                     </span>
                     <span
-                      className="mono"
-                      style={{
-                        fontSize: 11,
-                        color: mm.score >= 0.7 ? "var(--copper)" : "var(--slate)",
-                      }}
+                      className={`font-mono text-[11px] ${mm.score >= 0.7 ? "text-gold" : "text-graphite-muted"}`}
                     >
                       {Math.round(mm.score * 100)}
                     </span>
@@ -806,20 +693,19 @@ function CompareResults({
 
 function ResultSkeleton() {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <div className="flex flex-col gap-12">
       {[0, 1, 2, 3].map((i) => (
         <div
           key={i}
-          className="card"
-          style={{ padding: 20, display: "grid", gridTemplateColumns: "72px 1fr 240px", gap: 18 }}
+          className="card p-20 grid grid-cols-[72px_1fr_240px] gap-18"
         >
-          <div className="shimmer" style={{ height: 72, width: 72, borderRadius: "50%" }} />
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <div className="shimmer" style={{ height: 18, width: "60%" }} />
-            <div className="shimmer" style={{ height: 12, width: "82%" }} />
-            <div className="shimmer" style={{ height: 12, width: "40%" }} />
+          <div className="shimmer h-72 w-72 rounded-full" />
+          <div className="flex flex-col gap-10">
+            <div className="shimmer h-18 w-[60%]" />
+            <div className="shimmer h-12 w-[82%]" />
+            <div className="shimmer h-12 w-[40%]" />
           </div>
-          <div className="shimmer" style={{ height: 60, width: "100%" }} />
+          <div className="shimmer h-60 w-full" />
         </div>
       ))}
     </div>

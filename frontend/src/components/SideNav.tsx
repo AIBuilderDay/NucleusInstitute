@@ -1,0 +1,448 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { Route } from "../routeHero";
+import { IUMonogram } from "./ui";
+import type { Person, Startup } from "../types";
+import { SECTOR_LABEL, STAGE_LABEL, ROLE_CATEGORY_LABEL } from "../labels";
+
+interface SideNavProps {
+  route: Route;
+  setRoute: (r: Route) => void;
+  currentUser: Person | null;
+  people: Person[];
+  startups: Startup[];
+  onSelectPerson: (p: Person) => void;
+  onSelectStartup: (s: Startup) => void;
+  minimal?: boolean;
+}
+
+type SearchResult =
+  | { kind: "person"; item: Person }
+  | { kind: "startup"; item: Startup }
+  | { kind: "category"; label: string; type: string };
+
+const NAV_ITEMS: ReadonlyArray<{ id: Route; label: string; icon: "search" | "filter" | "star" }> = [
+  { id: "explore", label: "Explore", icon: "search" },
+  { id: "match", label: "Match", icon: "filter" },
+  { id: "profile", label: "Profile", icon: "star" },
+];
+
+function NavIcon({ type, active }: { type: string; active?: boolean }) {
+  const color = active ? "var(--nucleus-blue)" : "var(--graphite-muted)";
+  if (type === "search")
+    return (
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <circle cx="6" cy="6" r="4" stroke={color} strokeWidth="1.5" />
+        <path d="M9.5 9.5l2.5 2.5" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    );
+  if (type === "filter")
+    return (
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <path d="M2 3h10M4 7h6M6 11h2" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    );
+  if (type === "gear")
+    return (
+      <span className="material-icons text-[18px] leading-none" style={{ color }}>
+        settings
+      </span>
+    );
+  if (type === "star")
+    return (
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <path
+          d="M7 1.5l1.7 3.6 3.8.5-2.8 2.7.7 3.9L7 10.4 3.6 12.2l.7-3.9L1.5 5.6l3.8-.5L7 1.5z"
+          stroke={color} strokeWidth="1.2" fill="none" strokeLinejoin="round"
+        />
+      </svg>
+    );
+  return (
+    <span className="material-icons text-[18px] leading-none" style={{ color }}>
+      settings
+    </span>
+  );
+}
+
+function SideNavItem({
+  active,
+  children,
+  onClick,
+  icon,
+}: {
+  active: boolean;
+  children: React.ReactNode;
+  onClick: () => void;
+  icon: React.ReactNode;
+}) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      className={`flex items-center gap-12 py-9 px-12 text-[14px] border-0 rounded-[6px] cursor-pointer text-left transition-all duration-150 w-full ${
+        active
+          ? "text-nucleus-blue bg-blue-50 font-medium"
+          : hover
+            ? "text-graphite bg-pearl font-normal"
+            : "text-graphite-muted bg-transparent font-normal"
+      }`}
+    >
+      <span className="grid place-items-center">{icon}</span>
+      {children}
+    </button>
+  );
+}
+
+export function SideNav({
+  route,
+  setRoute,
+  currentUser,
+  people,
+  startups,
+  onSelectPerson,
+  onSelectStartup,
+  minimal = false,
+}: SideNavProps) {
+  const initials = currentUser
+    ? currentUser.name
+        .split(/\s+/)
+        .map((s) => s[0])
+        .filter(Boolean)
+        .slice(0, 2)
+        .join("")
+        .toUpperCase()
+    : "";
+
+  const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(-1);
+  const searchRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const categories = useMemo(() => {
+    const cats: Array<{ label: string; type: string }> = [];
+    for (const [, label] of Object.entries(SECTOR_LABEL)) {
+      cats.push({ label, type: "Sector" });
+    }
+    for (const [, label] of Object.entries(STAGE_LABEL)) {
+      cats.push({ label, type: "Stage" });
+    }
+    for (const [, label] of Object.entries(ROLE_CATEGORY_LABEL)) {
+      cats.push({ label, type: "Role" });
+    }
+    return cats;
+  }, []);
+
+  const results = useMemo<SearchResult[]>(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    const out: SearchResult[] = [];
+
+    for (const p of people) {
+      const haystack = [p.name, p.headline, p.role_category, ...p.skills, p.location_city].join(" ").toLowerCase();
+      if (haystack.includes(q)) out.push({ kind: "person", item: p });
+    }
+    for (const s of startups) {
+      const haystack = [s.name, s.one_liner, s.sector, ...(s.sectors_secondary ?? []), s.location_city].join(" ").toLowerCase();
+      if (haystack.includes(q)) out.push({ kind: "startup", item: s });
+    }
+    for (const c of categories) {
+      if (c.label.toLowerCase().includes(q) || c.type.toLowerCase().includes(q)) {
+        out.push({ kind: "category", label: c.label, type: c.type });
+      }
+    }
+    return out.slice(0, 12);
+  }, [query, people, startups, categories]);
+
+  useEffect(() => {
+    setActiveIdx(-1);
+  }, [query]);
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setSearchOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        inputRef.current?.focus();
+        setSearchOpen(true);
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
+  function selectResult(r: SearchResult) {
+    setQuery("");
+    setSearchOpen(false);
+    if (r.kind === "person") onSelectPerson(r.item);
+    else if (r.kind === "startup") onSelectStartup(r.item);
+    else setRoute("explore");
+  }
+
+  function onSearchKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIdx((i) => Math.min(i + 1, results.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIdx((i) => Math.max(i - 1, -1));
+    } else if (e.key === "Enter" && activeIdx >= 0 && results[activeIdx]) {
+      e.preventDefault();
+      selectResult(results[activeIdx]);
+    } else if (e.key === "Escape") {
+      setSearchOpen(false);
+      inputRef.current?.blur();
+    }
+  }
+
+  return (
+    <aside className="sidenav">
+      {/* Logo */}
+      <button
+        onClick={() => setRoute("landing")}
+        className="pt-22 px-22 pb-18 border-0 border-b border-solid border-pearl-200 bg-none cursor-pointer w-full text-left"
+      >
+        <div className="flex items-center gap-10">
+          <IUMonogram size={28} />
+          <div
+            className="font-display font-medium text-[18px] text-graphite tracking-[-0.2px]"
+          >
+            Nucleus
+          </div>
+          <div
+            className="font-mono text-[9px] uppercase tracking-[1.5px] text-graphite-muted py-3 px-6 border border-solid border-pearl-300 rounded-[4px]"
+          >
+            Institute
+          </div>
+        </div>
+      </button>
+
+      {/* Search */}
+      {!minimal && (
+        <div ref={searchRef} className="pt-16 px-16 pb-8 relative">
+          <div
+            className="flex items-center gap-8 px-12 bg-pearl rounded-[6px] border border-solid border-transparent"
+          >
+            <NavIcon type="search" />
+            <input
+              ref={inputRef}
+              className="!border-none !shadow-none !ring-0 !outline-none focus:!border-none focus:!shadow-none focus:!ring-0 flex-1 py-8 bg-transparent text-[13px] text-graphite min-w-0"
+              type="text"
+              value={query}
+              onChange={(e) => { setQuery(e.target.value); setSearchOpen(true); }}
+              onFocus={() => setSearchOpen(true)}
+              onKeyDown={onSearchKeyDown}
+              placeholder="Search..."
+            />
+            {!query && (
+              <span
+                className="font-mono text-[10px] text-graphite-light py-2 px-5 border border-solid border-pearl-300 rounded-[3px] shrink-0"
+              >
+                ⌘K
+              </span>
+            )}
+            {query && (
+              <button
+                onClick={() => { setQuery(""); inputRef.current?.focus(); }}
+                className="bg-none border-0 cursor-pointer text-graphite-light text-[12px] p-2 leading-none"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          {/* Results dropdown */}
+          {searchOpen && query.trim() && (
+            <div
+              className="absolute left-16 right-16 top-full mt-4 bg-white border border-solid border-pearl-300 rounded-[8px] shadow-[0_8px_24px_rgba(0,0,0,0.12)] max-h-[340px] overflow-y-auto z-100"
+            >
+              {results.length === 0 && (
+                <div className="py-16 px-14 text-[12px] text-graphite-light">
+                  No results for "{query}"
+                </div>
+              )}
+              {results.length > 0 && (
+                <div className="py-6">
+                  {results.map((r, i) => (
+                    <SearchResultRow
+                      key={r.kind === "person" ? `p-${r.item.id}` : r.kind === "startup" ? `s-${r.item.id}` : `c-${r.label}`}
+                      result={r}
+                      active={i === activeIdx}
+                      onClick={() => selectResult(r)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Nav */}
+      {!minimal && (
+        <nav className="py-8 px-12 flex flex-col gap-2">
+          <div
+            className="font-mono text-[10px] uppercase tracking-[1.5px] text-graphite-light pt-10 px-12 pb-6"
+          >
+            Workspace
+          </div>
+          {NAV_ITEMS.map((item) => (
+            <SideNavItem
+              key={item.id}
+              active={route === item.id}
+              onClick={() => setRoute(item.id)}
+              icon={<NavIcon type={item.icon} active={route === item.id} />}
+            >
+              {item.label}
+            </SideNavItem>
+          ))}
+        </nav>
+      )}
+
+      <div className="flex-1" />
+
+      {/* Footer */}
+      {!minimal && (
+        <div
+          className="p-12 border-t border-solid border-pearl-200 flex flex-col gap-8"
+        >
+          <SideNavItem
+            active={route === "settings"}
+            onClick={() => setRoute("settings")}
+            icon={<NavIcon type="gear" active={route === "settings"} />}
+          >
+            Settings
+          </SideNavItem>
+          <button
+            onClick={() => setRoute("onboard")}
+            className="py-8 px-12 text-[12px] text-graphite-muted bg-transparent border-0 text-left cursor-pointer rounded-[6px]"
+          >
+            Join / Re-onboard
+          </button>
+          {currentUser && (
+            <div
+              className="flex items-center gap-10 py-8 px-12 rounded-[6px] bg-pearl"
+            >
+              <div
+                className="w-32 h-32 rounded-full bg-graphite text-white grid place-items-center font-display font-medium text-[12px] shrink-0"
+              >
+                {initials}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div
+                  className="text-[12px] text-graphite font-medium whitespace-nowrap overflow-hidden text-ellipsis"
+                >
+                  {currentUser.name}
+                </div>
+                <div
+                  className="font-mono text-[10px] text-graphite-muted uppercase tracking-[1px]"
+                >
+                  Verified
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function SearchResultRow({
+  result,
+  active,
+  onClick,
+}: {
+  result: SearchResult;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const [hover, setHover] = useState(false);
+  const highlight = active || hover;
+
+  if (result.kind === "person") {
+    const p = result.item;
+    return (
+      <button
+        onClick={onClick}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        className={rowClass(highlight)}
+      >
+        <div className={`${avatarClass} bg-nucleus-blue`}>
+          {p.name.split(/\s+/).map((s) => s[0]).join("").slice(0, 2).toUpperCase()}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className={nameClass}>{p.name}</div>
+          <div className={subClass}>{p.headline}</div>
+        </div>
+        <span className={`font-mono ${badgeClass}`}>Person</span>
+      </button>
+    );
+  }
+
+  if (result.kind === "startup") {
+    const s = result.item;
+    return (
+      <button
+        onClick={onClick}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        className={rowClass(highlight)}
+      >
+        <div className={`${avatarClass} bg-graphite`}>
+          {s.name.slice(0, 2).toUpperCase()}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className={nameClass}>{s.name}</div>
+          <div className={subClass}>{s.one_liner}</div>
+        </div>
+        <span className={`font-mono ${badgeClass}`}>Startup</span>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      className={rowClass(highlight)}
+    >
+      <div className={`${avatarClass} text-[10px] bg-graphite-muted`}>
+        <NavIcon type="filter" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className={nameClass}>{result.label}</div>
+      </div>
+      <span className={`font-mono ${badgeClass}`}>{result.type}</span>
+    </button>
+  );
+}
+
+const rowClass = (highlight: boolean) =>
+  `flex items-center gap-10 w-full py-8 px-14 border-0 cursor-pointer text-left transition-colors duration-100 ${
+    highlight ? "bg-pearl" : "bg-transparent"
+  }`;
+
+const avatarClass =
+  "w-28 h-28 rounded-full text-white grid place-items-center font-display font-medium text-[11px] shrink-0";
+
+const nameClass =
+  "text-[12px] font-medium text-graphite whitespace-nowrap overflow-hidden text-ellipsis";
+
+const subClass =
+  "text-[11px] text-graphite-muted whitespace-nowrap overflow-hidden text-ellipsis mt-1";
+
+const badgeClass =
+  "text-[9px] text-graphite-light uppercase tracking-[1px] shrink-0";

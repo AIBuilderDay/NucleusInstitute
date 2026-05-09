@@ -1,4 +1,4 @@
-import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import type { DimensionScores } from "../types";
 
 // ── Logo + Monogram — Innovate Utah ───────────────────────────────────────────
@@ -46,31 +46,23 @@ interface IUWordmarkProps {
 }
 
 export function IUWordmark({ inverse = false }: IUWordmarkProps) {
-  const c = inverse ? "var(--white)" : "var(--nucleus-blue)";
+  const colorClass = inverse ? "text-white" : "text-nucleus-blue";
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+    <div className="flex items-center gap-11">
       <IUMonogram
         size={34}
-        color={c}
+        color={inverse ? "var(--white)" : "var(--nucleus-blue)"}
         bg={inverse ? "var(--nucleus-blue)" : "var(--white)"}
       />
-      <div style={{ display: "flex", flexDirection: "column", lineHeight: 1 }}>
+      <div className="flex flex-col leading-none">
         <span
-          className="display"
-          style={{ fontSize: 20.5, fontWeight: 500, color: c, letterSpacing: "-0.012em" }}
+          className={`font-display font-medium tracking-[-0.012em] text-[20.5px] ${colorClass}`}
         >
           Innovate{" "}
-          <span style={{ fontStyle: "italic", fontWeight: 400 }}>Utah</span>
+          <span className="italic font-normal">Utah</span>
         </span>
         <span
-          style={{
-            fontSize: 9.5,
-            letterSpacing: "0.2em",
-            textTransform: "uppercase",
-            color: c,
-            opacity: 0.65,
-            marginTop: 3,
-          }}
+          className={`text-[9.5px] tracking-[0.2em] uppercase opacity-65 mt-3 ${colorClass}`}
         >
           Connections Hub
         </span>
@@ -102,20 +94,13 @@ export function Avatar({ name, size = 44, tone = "blue" }: AvatarProps) {
   const t = tones[tone];
   return (
     <div
+      className="rounded-full shrink-0 flex items-center justify-center font-display font-medium tracking-[-0.01em]"
       style={{
         width: size,
         height: size,
-        borderRadius: "50%",
-        flexShrink: 0,
         background: t.bg,
         color: t.fg,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontFamily: "var(--font-display)",
-        fontWeight: 500,
         fontSize: size * 0.42,
-        letterSpacing: "-0.01em",
         border: tone === "cream" ? "1px solid var(--whisper-300)" : "none",
       }}
     >
@@ -169,8 +154,8 @@ export function ScoreArc({ score, size = 72, label = true }: ScoreArcProps) {
         ? "var(--nucleus-blue-500)"
         : "var(--slate-light)";
   return (
-    <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
-      <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
         <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--whisper-200)" strokeWidth="6" />
         <circle
           cx={cx}
@@ -181,35 +166,18 @@ export function ScoreArc({ score, size = 72, label = true }: ScoreArcProps) {
           strokeWidth="6"
           strokeDasharray={`${dash} ${C}`}
           strokeLinecap="round"
-          style={{ transition: "stroke-dasharray 0.6s ease" }}
+          className="transition-[stroke-dasharray] duration-[600ms] ease-in-out"
         />
       </svg>
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          lineHeight: 1,
-        }}
-      >
+      <div className="absolute inset-0 flex flex-col items-center justify-center leading-none">
         <span
-          className="display"
-          style={{ fontSize: size * 0.32, fontWeight: 500, color: "var(--nucleus-blue)" }}
+          className="font-display font-medium text-nucleus-blue"
+          style={{ fontSize: size * 0.32 }}
         >
           {Math.round(score * 100)}
         </span>
         {label && (
-          <span
-            style={{
-              fontSize: 9,
-              letterSpacing: "0.14em",
-              color: "var(--slate)",
-              marginTop: 2,
-            }}
-          >
+          <span className="text-[9px] tracking-[0.14em] text-graphite-muted mt-2">
             FIT
           </span>
         )}
@@ -252,53 +220,30 @@ export function DimensionBars({ dims }: DimensionBarsProps) {
   const present = DIM_ORDER.filter((k) => dims?.[k] !== undefined);
   if (present.length === 0) {
     return (
-      <div style={{ fontSize: 11, color: "var(--slate-light)", fontStyle: "italic" }}>
+      <div className="text-[11px] text-graphite-light italic">
         No dimension breakdown available.
       </div>
     );
   }
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 6, width: "100%" }}>
+    <div className="grid grid-cols-1 gap-6 w-full">
       {present.map((k) => {
         const v = Math.max(0, Math.min(1, dims?.[k] ?? 0));
-        const color =
-          v >= 0.7
-            ? "var(--copper)"
-            : v >= 0.4
-              ? "var(--nucleus-blue-500)"
-              : "var(--whisper-300)";
+        const barColor =
+          v >= 0.7 ? "bg-gold" : v >= 0.4 ? "bg-blue-600" : "bg-pearl-300";
         return (
           <div
             key={k}
-            style={{
-              display: "grid",
-              gridTemplateColumns: "68px 1fr 28px",
-              alignItems: "center",
-              gap: 8,
-            }}
+            className="grid grid-cols-[68px_1fr_28px] items-center gap-8"
           >
-            <span style={{ fontSize: 11, color: "var(--slate)" }}>{DIM_LABEL[k]}</span>
-            <div
-              style={{
-                height: 6,
-                background: "var(--whisper-200)",
-                borderRadius: 3,
-                overflow: "hidden",
-              }}
-            >
+            <span className="text-[11px] text-graphite-muted">{DIM_LABEL[k]}</span>
+            <div className="h-6 bg-pearl-200 rounded-[3px] overflow-hidden">
               <div
-                style={{
-                  width: `${v * 100}%`,
-                  height: "100%",
-                  background: color,
-                  transition: "width 0.5s ease",
-                }}
+                className={`h-full transition-[width] duration-500 ease-in-out ${barColor}`}
+                style={{ width: `${v * 100}%` }}
               />
             </div>
-            <span
-              className="mono"
-              style={{ fontSize: 10.5, textAlign: "right", color: "var(--slate)" }}
-            >
+            <span className="font-mono text-[10.5px] text-right text-graphite-muted">
               {(v * 100).toFixed(0)}
             </span>
           </div>
@@ -327,71 +272,34 @@ export function Sidesheet({
   accent = "blue",
 }: SidesheetProps) {
   if (!open) return null;
-  const accentColor = accent === "copper" ? "var(--copper)" : "var(--nucleus-blue)";
   return (
     <div
       onClick={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(15,44,79,0.35)",
-        zIndex: 70,
-        display: "flex",
-        justifyContent: "flex-end",
-      }}
+      className="fixed inset-0 bg-[rgba(15,44,79,0.35)] z-70 flex justify-end"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="fade-in"
-        style={{
-          width: 560,
-          maxWidth: "94vw",
-          background: "var(--whisper-50)",
-          height: "100%",
-          overflowY: "auto",
-          borderLeft: "1px solid var(--color-border)",
-        }}
+        className="fade-in w-560 max-w-[94vw] bg-pearl h-full overflow-y-auto border-l border-pearl-300"
       >
         <div
-          style={{
-            padding: "22px 28px 16px",
-            borderBottom: "1px solid var(--color-border)",
-            borderTop: `3px solid ${accentColor}`,
-            position: "sticky",
-            top: 0,
-            background: "var(--whisper-50)",
-            zIndex: 1,
-          }}
+          className={`py-22 px-28 pb-16 border-b border-pearl-300 sticky top-0 bg-pearl z-1 border-t-3 ${
+            accent === "copper" ? "border-t-gold" : "border-t-nucleus-blue"
+          }`}
         >
           {subtitle && <div className="tiny-caps">{subtitle}</div>}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-            }}
-          >
-            <h2
-              className="display"
-              style={{
-                fontSize: 30,
-                margin: "4px 0 0",
-                color: "var(--nucleus-blue)",
-              }}
-            >
+          <div className="flex items-center justify-between gap-12">
+            <h2 className="font-display text-[30px] mt-4 mb-0 text-nucleus-blue">
               {title}
             </h2>
             <button
               onClick={onClose}
-              className="btn btn-ghost"
-              style={{ padding: "6px 12px", fontSize: 12 }}
+              className="btn btn-ghost py-6 px-12 text-[12px]"
             >
               Close ✕
             </button>
           </div>
         </div>
-        <div style={{ padding: "24px 28px 48px" }}>{children}</div>
+        <div className="pt-24 px-28 pb-48">{children}</div>
       </div>
     </div>
   );
@@ -401,7 +309,7 @@ export function Sidesheet({
 export function DetailGroup({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <div className="tiny-caps" style={{ marginBottom: 8 }}>
+      <div className="tiny-caps mb-8">
         {label}
       </div>
       {children}
@@ -411,19 +319,9 @@ export function DetailGroup({ label, children }: { label: string; children: Reac
 
 export function Stat({ k, v }: { k: string; v: ReactNode }) {
   return (
-    <div
-      style={{
-        background: "var(--white)",
-        border: "1px solid var(--color-border-soft)",
-        borderRadius: 8,
-        padding: "10px 12px",
-      }}
-    >
+    <div className="bg-white border border-pearl-200 rounded-[8px] py-10 px-12">
       <div className="tiny-caps">{k}</div>
-      <div
-        className="display"
-        style={{ fontSize: 18, color: "var(--nucleus-blue)", marginTop: 2 }}
-      >
+      <div className="font-display text-[18px] text-nucleus-blue mt-2">
         {v}
       </div>
     </div>
@@ -431,15 +329,7 @@ export function Stat({ k, v }: { k: string; v: ReactNode }) {
 }
 
 // ── Field (form helper) ───────────────────────────────────────────────────────
-export const selectStyle: CSSProperties = {
-  width: "100%",
-  padding: "9px 12px",
-  borderRadius: 6,
-  border: "1px solid var(--color-border)",
-  background: "var(--white)",
-  fontSize: 13,
-  color: "var(--charcoal)",
-};
+export const selectClass = "w-full py-9 px-12 rounded-[6px] border border-pearl-300 bg-white text-[13px] text-graphite";
 
 export function Field({
   label,
@@ -451,21 +341,13 @@ export function Field({
   children: ReactNode;
 }) {
   return (
-    <div style={{ marginBottom: 14 }}>
-      <label
-        style={{
-          display: "block",
-          fontSize: 12,
-          fontWeight: 500,
-          color: "var(--charcoal)",
-          marginBottom: 6,
-        }}
-      >
+    <div className="mb-14">
+      <label className="block text-[12px] font-medium text-graphite mb-6">
         {label}
       </label>
       {children}
       {hint && (
-        <div style={{ fontSize: 11, color: "var(--slate-light)", marginTop: 4 }}>{hint}</div>
+        <div className="text-[11px] text-graphite-light mt-4">{hint}</div>
       )}
     </div>
   );

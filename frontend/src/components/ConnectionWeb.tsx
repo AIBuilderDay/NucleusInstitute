@@ -13,7 +13,7 @@ export function ConnectionWeb({ connections, currentUser, onPick }: ConnectionWe
     cx = W / 2,
     cy = H / 2;
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", maxHeight: 560 }}>
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto max-h-[560px]">
       {[0.85, 0.6, 0.35].map((_, i) => (
         <circle
           key={i}
@@ -66,7 +66,7 @@ export function ConnectionWeb({ connections, currentUser, onPick }: ConnectionWe
         const anchor =
           Math.cos(a) > 0.1 ? "start" : Math.cos(a) < -0.1 ? "end" : "middle";
         return (
-          <g key={`n${i}`} style={{ cursor: "pointer" }} onClick={() => onPick(c.person)}>
+          <g key={`n${i}`} className="cursor-pointer" onClick={() => onPick(c.person)}>
             <circle
               cx={x}
               cy={y}
@@ -92,7 +92,7 @@ export function ConnectionWeb({ connections, currentUser, onPick }: ConnectionWe
               fontSize="10.5"
               fill="var(--slate)"
               dominantBaseline="middle"
-              style={{ fontFamily: "var(--font-sans)" }}
+              fontFamily="var(--font-sans)"
             >
               {c.person.name.split(" ")[0]} · {Math.round(c.warmth * 100)}
             </text>
