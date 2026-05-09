@@ -9,6 +9,7 @@ Router prefixes (all under /api/v1):
 - /talent
 - /startup
 - /match
+- /discover
 - /auth
 - /onboard
 """
@@ -19,6 +20,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
+from app.api.discovery import router as discovery_router
 from app.api.health import router as health_router
 from app.api.match import router as match_router
 from app.api.onboard import router as onboard_router
@@ -85,5 +87,6 @@ app.include_router(health_router)
 app.include_router(talent_router, prefix=f"{API_PREFIX}/talent", tags=["talent"])
 app.include_router(startup_router, prefix=f"{API_PREFIX}/startup", tags=["startup"])
 app.include_router(match_router, prefix=f"{API_PREFIX}/match", tags=["match"])
+app.include_router(discovery_router, prefix=f"{API_PREFIX}/discover", tags=["discover"])
 app.include_router(auth_router, prefix=f"{API_PREFIX}/auth", tags=["auth"])
 app.include_router(onboard_router, prefix=f"{API_PREFIX}/onboard", tags=["onboard"])
