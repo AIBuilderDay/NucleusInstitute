@@ -29,7 +29,8 @@ export type RoleCategory =
   | "service_provider"
   | "student"
   | "intern"
-  | "board_member";
+  | "board_member"
+  | "university";
 
 export type Availability =
   | "full_time"
@@ -149,6 +150,9 @@ export interface MatchResult {
   reasons: string[];
   blockers: string[];
   matcher: string;
+  confidence: number | null;
+  agent_notes: string | null;
+  agent_raw_response: string | null;
   // Hydrated client-side from the loaded people/startups list.
   startup?: Startup;
   person?: Person;

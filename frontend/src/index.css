@@ -1,10 +1,48 @@
 @import "tailwindcss";
 
-/*
-  Nucleus design tokens — sampled from nucleusfundutah.com.
-  Inline styles in components reference these CSS custom properties directly.
-*/
+@theme {
+  --spacing: 1px;
 
+  --color-nucleus-blue: #0848b8;
+  --color-blue-700: #073a98;
+  --color-blue-600: #0e54cc;
+  --color-blue-500: #2d6fe0;
+  --color-blue-400: #4a85e5;
+  --color-blue-300: #6e97eb;
+  --color-blue-200: #a8c0f0;
+  --color-blue-100: #dce6fa;
+  --color-blue-50: #f2f6fe;
+
+  --color-pearl: #fafbfd;
+  --color-pearl-100: #f5f7fb;
+  --color-pearl-200: #eff2f7;
+  --color-pearl-300: #e2e6ee;
+
+  --color-gold: #d89a36;
+  --color-gold-soft: #f4dea8;
+  --color-gold-deep: #b07f2a;
+  --color-gold-faint: #fbf1d9;
+
+  --color-coral: #e16a4d;
+  --color-coral-soft: #fbe0d6;
+  --color-sage: #5a9d8c;
+  --color-sage-soft: #def0ea;
+  --color-plum: #7c5aa0;
+  --color-plum-soft: #ece3f4;
+
+  --color-graphite: #1a2233;
+  --color-graphite-muted: #5a6478;
+  --color-graphite-light: #94a0b5;
+
+  --font-display: "Newsreader", Georgia, serif;
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
+
+  --shadow-card: 0 1px 2px rgba(15, 44, 79, 0.04), 0 1px 1px rgba(15, 44, 79, 0.03);
+  --shadow-hover: 0 4px 16px rgba(15, 44, 79, 0.08), 0 1px 2px rgba(15, 44, 79, 0.05);
+}
+
+/* Legacy CSS variable aliases for SVG fill/stroke and dynamic inline styles */
 :root {
   --nucleus-blue: #0848b8;
   --blue-700: #073a98;
@@ -15,30 +53,24 @@
   --blue-200: #a8c0f0;
   --blue-100: #dce6fa;
   --blue-50: #f2f6fe;
-
   --pearl: #fafbfd;
   --pearl-100: #f5f7fb;
   --pearl-200: #eff2f7;
   --pearl-300: #e2e6ee;
-
   --gold: #d89a36;
   --gold-soft: #f4dea8;
   --gold-deep: #b07f2a;
   --gold-faint: #fbf1d9;
-
   --coral: #e16a4d;
   --coral-soft: #fbe0d6;
   --sage: #5a9d8c;
   --sage-soft: #def0ea;
   --plum: #7c5aa0;
   --plum-soft: #ece3f4;
-
   --graphite: #1a2233;
   --graphite-muted: #5a6478;
   --graphite-light: #94a0b5;
   --white: #ffffff;
-
-  /* Legacy aliases so existing inline-style references keep working */
   --nucleus-blue-600: var(--blue-700);
   --nucleus-blue-500: var(--blue-600);
   --nucleus-blue-400: var(--blue-500);
@@ -53,7 +85,6 @@
   --charcoal: var(--graphite);
   --slate: var(--graphite-muted);
   --slate-light: var(--graphite-light);
-
   --sand: var(--blue-50);
   --sand-50: var(--pearl);
   --sand-200: var(--pearl-200);
@@ -66,185 +97,180 @@
   --ink: var(--graphite);
   --ink-muted: var(--graphite-muted);
   --ink-light: var(--graphite-light);
-
-  --color-bg: var(--whisper-50);
+  --color-bg: var(--pearl);
   --color-surface: var(--white);
-  --color-text: var(--charcoal);
-  --color-text-muted: var(--slate);
-  --color-border: var(--whisper-300);
-  --color-border-soft: var(--whisper-200);
+  --color-text: var(--graphite);
+  --color-text-muted: var(--graphite-muted);
+  --color-border: var(--pearl-300);
+  --color-border-soft: var(--pearl-200);
   --color-primary: var(--nucleus-blue);
-  --color-accent: var(--copper);
-
-  --font-display: "Newsreader", Georgia, serif;
-  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
-
-  --shadow-card: 0 1px 2px rgba(15, 44, 79, 0.04), 0 1px 1px rgba(15, 44, 79, 0.03);
-  --shadow-hover: 0 4px 16px rgba(15, 44, 79, 0.08), 0 1px 2px rgba(15, 44, 79, 0.05);
+  --color-accent: var(--gold);
 }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+@layer base {
+  html,
+  body {
+    @apply bg-pearl text-graphite font-sans text-[14px] leading-normal antialiased;
+  }
+
+  button {
+    @apply bg-transparent border-0 cursor-pointer text-inherit;
+    font-family: inherit;
+    font-size: inherit;
+  }
+
+  input,
+  textarea,
+  select {
+    @apply text-inherit outline-none;
+    font-family: inherit;
+  }
+
+  input:focus,
+  textarea:focus,
+  select:focus {
+    border-color: var(--nucleus-blue-400) !important;
+    box-shadow: 0 0 0 3px rgba(61, 122, 179, 0.15);
+  }
+
+  a {
+    @apply text-blue-600 no-underline;
+  }
+
+  a:hover {
+    @apply underline;
+  }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    @apply h-4 bg-pearl-300 rounded-[2px];
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    @apply w-16 h-16 rounded-full bg-nucleus-blue cursor-pointer;
+    border: 3px solid var(--blue-50);
+    box-shadow: 0 0 0 1px var(--nucleus-blue);
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    @apply w-16 h-16 rounded-full bg-nucleus-blue cursor-pointer;
+    border: 3px solid var(--blue-50);
+  }
+
+  ::selection {
+    @apply bg-nucleus-blue text-blue-50;
+  }
 }
 
-html,
-body {
-  background: var(--color-bg);
-  color: var(--color-text);
-  font-family: var(--font-sans);
-  font-size: 14px;
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-}
+@layer components {
+  .tiny-caps {
+    @apply text-[10.5px] tracking-[0.14em] uppercase text-graphite-muted font-medium;
+  }
 
-button {
-  background: none;
-  border: 0;
-  cursor: pointer;
-  color: inherit;
-  font-family: inherit;
-  font-size: inherit;
-}
+  .card {
+    @apply bg-white border border-pearl-200 rounded-[10px] shadow-card;
+  }
 
-input,
-textarea,
-select {
-  font-family: inherit;
-  color: inherit;
-  outline: none;
-}
+  .card-hover {
+    @apply transition-all duration-150;
+  }
 
-input:focus,
-textarea:focus,
-select:focus {
-  border-color: var(--nucleus-blue-400) !important;
-  box-shadow: 0 0 0 3px rgba(61, 122, 179, 0.15);
-}
+  .card-hover:hover {
+    @apply border-blue-200 shadow-hover;
+  }
 
-a {
-  color: var(--nucleus-blue-500);
-  text-decoration: none;
-}
+  .pill {
+    @apply inline-flex items-center gap-4 px-10 py-3 rounded-full bg-pearl-200 text-graphite text-[11.5px] font-medium leading-normal border border-transparent whitespace-nowrap;
+  }
 
-a:hover {
-  text-decoration: underline;
-}
+  .pill-blue {
+    @apply bg-[rgba(61,122,179,0.1)] text-nucleus-blue border-[rgba(61,122,179,0.18)];
+  }
 
-.display {
-  font-family: var(--font-display);
-}
+  .pill-copper {
+    @apply bg-gold-faint text-[#8a5e1f] border-[rgba(200,146,74,0.3)];
+  }
 
-.mono {
-  font-family: var(--font-mono);
-}
+  .pill-solid {
+    @apply bg-nucleus-blue text-blue-50;
+  }
 
-.tiny-caps {
-  font-size: 10.5px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--slate);
-  font-weight: 500;
-}
+  .btn {
+    @apply inline-flex items-center justify-center gap-6 py-9 px-16 rounded-[7px] text-[13px] font-medium leading-none transition-all duration-[120ms] border border-transparent;
+  }
 
-.card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border-soft);
-  border-radius: 10px;
-  box-shadow: var(--shadow-card);
-}
+  .btn:disabled {
+    @apply opacity-50 cursor-not-allowed;
+  }
 
-.card-hover {
-  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
-}
+  .btn-primary {
+    @apply bg-nucleus-blue text-blue-50 border-nucleus-blue;
+  }
 
-.card-hover:hover {
-  border-color: var(--nucleus-blue-200);
-  box-shadow: var(--shadow-hover);
-}
+  .btn-primary:hover:not(:disabled) {
+    @apply bg-blue-700;
+  }
 
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: var(--whisper-200);
-  color: var(--charcoal);
-  font-size: 11.5px;
-  font-weight: 500;
-  line-height: 1.5;
-  border: 1px solid transparent;
-  white-space: nowrap;
-}
+  .btn-copper {
+    @apply bg-gold text-white border-gold;
+  }
 
-.pill-blue {
-  background: rgba(61, 122, 179, 0.1);
-  color: var(--nucleus-blue);
-  border-color: rgba(61, 122, 179, 0.18);
-}
+  .btn-copper:hover:not(:disabled) {
+    background: #b58241;
+  }
 
-.pill-copper {
-  background: var(--copper-faint);
-  color: #8a5e1f;
-  border-color: rgba(200, 146, 74, 0.3);
-}
+  .btn-ghost {
+    @apply bg-transparent text-graphite border-pearl-300;
+  }
 
-.pill-solid {
-  background: var(--nucleus-blue);
-  color: var(--wasatch-whisper);
-}
+  .btn-ghost:hover:not(:disabled) {
+    @apply bg-pearl-200 border-pearl-300;
+  }
 
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 9px 16px;
-  border-radius: 7px;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1;
-  transition: all 0.12s ease;
-  border: 1px solid transparent;
-}
+  .fade-in {
+    animation: fade-in 0.3s ease both;
+  }
 
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--pearl-200) 25%,
+      var(--pearl) 50%,
+      var(--pearl-200) 75%
+    );
+    background-size: 800px 100%;
+    animation: shimmer 1.4s linear infinite;
+    @apply rounded-[4px];
+  }
 
-.btn-primary {
-  background: var(--nucleus-blue);
-  color: var(--wasatch-whisper);
-  border-color: var(--nucleus-blue);
-}
+  .sidenav {
+    @apply fixed top-0 left-0 bottom-0 w-[232px] bg-white flex flex-col z-50;
+    border-right: 1px solid var(--pearl-300);
+  }
 
-.btn-primary:hover:not(:disabled) {
-  background: var(--nucleus-blue-600);
-}
+  .sidenav-content {
+    @apply flex-1 min-w-0 ml-[232px] flex flex-col min-h-screen;
+  }
 
-.btn-copper {
-  background: var(--copper);
-  color: var(--white);
-  border-color: var(--copper);
-}
+  .carousel-track {
+    @apply flex gap-48 w-max;
+    animation: carousel-scroll 30s linear infinite;
+  }
 
-.btn-copper:hover:not(:disabled) {
-  background: #b58241;
-}
+  .carousel-track:hover {
+    animation-play-state: paused;
+  }
 
-.btn-ghost {
-  background: transparent;
-  color: var(--charcoal);
-  border-color: var(--color-border);
-}
+  .card-reveal {
+    @apply opacity-0;
+  }
 
-.btn-ghost:hover:not(:disabled) {
-  background: var(--whisper-200);
-  border-color: var(--whisper-300);
+  .card-reveal.visible {
+    animation: card-reveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
 }
 
 @keyframes fade-in {
@@ -258,10 +284,6 @@ a:hover {
   }
 }
 
-.fade-in {
-  animation: fade-in 0.3s ease both;
-}
-
 @keyframes shimmer {
   0% {
     background-position: -400px 0;
@@ -271,48 +293,18 @@ a:hover {
   }
 }
 
-.shimmer {
-  background: linear-gradient(
-    90deg,
-    var(--whisper-200) 25%,
-    var(--whisper-50) 50%,
-    var(--whisper-200) 75%
-  );
-  background-size: 800px 100%;
-  animation: shimmer 1.4s linear infinite;
-  border-radius: 4px;
+@keyframes carousel-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
 }
 
-input[type="range"] {
-  -webkit-appearance: none;
-  appearance: none;
-  height: 4px;
-  background: var(--whisper-300);
-  border-radius: 2px;
-}
-
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--nucleus-blue);
-  cursor: pointer;
-  border: 3px solid var(--wasatch-whisper);
-  box-shadow: 0 0 0 1px var(--nucleus-blue);
-}
-
-input[type="range"]::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--nucleus-blue);
-  cursor: pointer;
-  border: 3px solid var(--wasatch-whisper);
-}
-
-::selection {
-  background: var(--nucleus-blue);
-  color: var(--wasatch-whisper);
+@keyframes card-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }

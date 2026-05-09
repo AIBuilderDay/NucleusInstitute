@@ -210,7 +210,7 @@ class AgenticFilterMatcher(MatchingProvider):
                 "  - Investor (if seeking_investment) → find_investors\n"
                 "  - Service provider (if services_needed) → find_service_providers\n"
                 "  - Student / intern → find_students_interns\n"
-                "  - Faculty / professor (lab tie-in, academic sponsor) → find_educators"
+                "  - Faculty / professor (lab tie-in, academic sponsor) → find_university"
             )
 
         return (

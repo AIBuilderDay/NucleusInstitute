@@ -79,6 +79,7 @@ export const ROLE_CATEGORIES: RoleCategory[] = [
   "board_member",
   "student",
   "intern",
+  "university",
 ];
 
 export const ROLE_CATEGORY_LABEL: Record<RoleCategory, string> = {
@@ -91,6 +92,7 @@ export const ROLE_CATEGORY_LABEL: Record<RoleCategory, string> = {
   board_member: "Board Member",
   student: "Student",
   intern: "Intern",
+  university: "University",
 };
 
 export const AVAILABILITIES: Availability[] = [

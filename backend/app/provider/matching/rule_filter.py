@@ -84,10 +84,7 @@ ROLE_WEIGHTS: dict[str, dict[str, float]] = {
         "location": 0.20,
         "role": 0.10,
     },
-    # Educators bring sector + mission expertise from a specific institution;
-    # comp is irrelevant (skipped in _filter_compensation), and they don't fill
-    # a "role" the way an exec/operator would.
-    RoleCategory.EDUCATOR.value: {
+    RoleCategory.UNIVERSITY.value: {
         "sector": 0.30,
         "mission": 0.30,
         "stage": 0.20,
@@ -129,8 +126,7 @@ def _filter_role_category(t: Talent, s: Startup) -> tuple[bool, str | None]:
 
 
 def _filter_compensation(t: Talent, s: Startup) -> tuple[bool, str | None]:
-    # Mentors and educators offer time for free — skip comp filtering entirely.
-    if t.role_category in (RoleCategory.MENTOR.value, RoleCategory.EDUCATOR.value):
+    if t.role_category in (RoleCategory.MENTOR.value, RoleCategory.UNIVERSITY.value):
         return True, None
 
     talent_wants_salary = t.comp_expectation_type in (

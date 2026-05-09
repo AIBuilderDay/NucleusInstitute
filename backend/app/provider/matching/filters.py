@@ -128,9 +128,9 @@ class StudentInternFilters(BaseModel):
     sectors_of_interest: list[Sector] | None = None
 
 
-class EducatorFilters(BaseModel):
-    """Filters for the Educator cohort — faculty / lecturers / professors plugging
-    their lab, students, and domain expertise into startups."""
+class UniversityFilters(BaseModel):
+    """Filters for the University cohort — faculty / lecturers / professors at
+    Utah universities plugging their lab, students, and domain expertise into startups."""
 
     school: str | None = Field(
         None, description="Case-insensitive substring match on education[].school (their teaching institution)"
@@ -318,8 +318,8 @@ def filter_students_interns(pool: list[Talent], f: StudentInternFilters) -> list
     return survivors
 
 
-def filter_educators(pool: list[Talent], f: EducatorFilters) -> list[Talent]:
-    survivors = [t for t in pool if t.role_category == RoleCategory.EDUCATOR.value]
+def filter_university(pool: list[Talent], f: UniversityFilters) -> list[Talent]:
+    survivors = [t for t in pool if t.role_category == RoleCategory.UNIVERSITY.value]
     if f.school:
         school_l = f.school.lower()
         survivors = [
@@ -392,7 +392,7 @@ TARGET_TALENT_NETWORKS = (
     "investors",
     "service_providers",
     "students_interns",
-    "educators",
+    "university",
 )
 TARGET_STARTUPS = "startups"
 ALL_TARGETS = (*TARGET_TALENT_NETWORKS, TARGET_STARTUPS)

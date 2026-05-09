@@ -24,37 +24,28 @@ export function PersonCard({
       tabIndex={0}
       onClick={onClick}
       onKeyDown={cardKeyHandler(onClick)}
-      className="card card-hover"
-      style={{
-        textAlign: "left",
-        padding: dense ? 14 : 18,
-        width: "100%",
-        cursor: "pointer",
-        borderColor: selected ? "var(--nucleus-blue)" : undefined,
-        boxShadow: selected ? "0 0 0 1px var(--nucleus-blue) inset" : undefined,
-        display: "grid",
-        gridTemplateColumns: dense ? "auto 1fr" : "auto 1fr auto",
-        gap: 14,
-        alignItems: "flex-start",
-      }}
+      className={`card card-hover text-left w-full cursor-pointer grid gap-14 items-start ${
+        dense ? "p-14 grid-cols-[auto_1fr]" : "p-18 grid-cols-[auto_1fr_auto]"
+      } ${selected ? "border-nucleus-blue shadow-[inset_0_0_0_1px_var(--nucleus-blue)]" : ""}`}
     >
       <Avatar name={p.name} size={dense ? 40 : 48} />
-      <div style={{ minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <div className="min-w-0">
+        <div className="flex items-center gap-8 flex-wrap">
           <span
-            className="display"
-            style={{ fontSize: dense ? 17 : 19, fontWeight: 500, color: "var(--charcoal)" }}
+            className={`font-display font-medium text-graphite ${
+              dense ? "text-[17px]" : "text-[19px]"
+            }`}
           >
             {p.name}
           </span>
-          <span style={{ fontSize: 11, color: "var(--slate)", letterSpacing: "0.04em" }}>
+          <span className="text-[11px] text-graphite-muted tracking-[0.04em]">
             · {p.location_city}
           </span>
         </div>
-        <div style={{ fontSize: 13, color: "var(--slate)", marginTop: 2, marginBottom: 8 }}>
+        <div className="text-[13px] text-graphite-muted mt-2 mb-8">
           {p.headline}
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        <div className="flex flex-wrap gap-6">
           {p.sectors_of_interest.slice(0, 3).map((s) => (
             <Pill key={s} tone="blue">
               {SECTOR_LABEL[s]}
@@ -69,7 +60,7 @@ export function PersonCard({
         </div>
       </div>
       {!dense && (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+        <div className="flex flex-col items-end gap-6">
           {badge}
           <span className="tiny-caps">
             {NETWORK_LABEL[p.primary_network].split(" ")[0]}
@@ -101,39 +92,27 @@ export function StartupCard({
       tabIndex={0}
       onClick={onClick}
       onKeyDown={cardKeyHandler(onClick)}
-      className="card card-hover"
-      style={{
-        textAlign: "left",
-        padding: dense ? 14 : 18,
-        width: "100%",
-        cursor: "pointer",
-        borderColor: selected ? "var(--copper)" : undefined,
-        boxShadow: selected ? "0 0 0 1px var(--copper) inset" : undefined,
-        display: "grid",
-        gridTemplateColumns: dense ? "1fr" : "1fr auto",
-        gap: 12,
-      }}
+      className={`card card-hover text-left w-full cursor-pointer grid gap-12 ${
+        dense ? "p-14 grid-cols-[1fr]" : "p-18 grid-cols-[1fr_auto]"
+      } ${selected ? "border-gold shadow-[inset_0_0_0_1px_var(--gold)]" : ""}`}
     >
-      <div style={{ minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+      <div className="min-w-0">
+        <div className="flex items-baseline gap-10 flex-wrap">
           <span
-            className="display"
-            style={{
-              fontSize: dense ? 18 : 21,
-              fontWeight: 500,
-              color: "var(--nucleus-blue)",
-            }}
+            className={`font-display font-medium text-nucleus-blue ${
+              dense ? "text-[18px]" : "text-[21px]"
+            }`}
           >
             {s.name}
           </span>
-          <span style={{ fontSize: 11, color: "var(--slate)", letterSpacing: "0.04em" }}>
+          <span className="text-[11px] text-graphite-muted tracking-[0.04em]">
             {s.location_city}
           </span>
         </div>
-        <div style={{ fontSize: 13, color: "var(--charcoal)", marginTop: 4, marginBottom: 10 }}>
+        <div className="text-[13px] text-graphite mt-4 mb-10">
           {s.one_liner}
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        <div className="flex flex-wrap gap-6">
           <Pill tone="blue">{SECTOR_LABEL[s.sector]}</Pill>
           <Pill>{STAGE_LABEL[s.stage]}</Pill>
           {s.roles_needed.slice(0, 3).map((r) => (

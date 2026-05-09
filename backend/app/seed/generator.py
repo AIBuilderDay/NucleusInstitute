@@ -715,7 +715,7 @@ def _gen_service_provider(rng: random.Random, idx: int) -> dict[str, Any]:
     }
 
 
-def _gen_educator(rng: random.Random, idx: int) -> dict[str, Any]:
+def _gen_university(rng: random.Random, idx: int) -> dict[str, Any]:
     sector = rng.choice(SECTORS)
     school = rng.choice(UNIVERSITIES)
     field_by_sector = {
@@ -741,7 +741,7 @@ def _gen_educator(rng: random.Random, idx: int) -> dict[str, Any]:
         "name": f"{first} {last}, PhD",
         "email": _make_email(rng, first, last, idx),
         "headline": f"{rank} of {field} — {school}",
-        "role_category": "educator",
+        "role_category": "university",
         "role_titles_seeking": ["other"],
         "availability": "advisory",
         "hours_per_week_min": 1,
@@ -802,7 +802,7 @@ def _gen_startup(rng: random.Random, idx: int) -> dict[str, Any]:
     roles_pool = ["ceo", "cto", "coo", "cfo", "engineer", "sales", "marketing", "biz_dev", "regulatory", "product", "design", "cofounder"]
     roles_needed = rng.sample(roles_pool, rng.randint(2, 4))
 
-    open_to_pool = ["executive", "operator", "advisor", "board_member", "mentor", "investor", "service_provider", "educator"]
+    open_to_pool = ["executive", "operator", "advisor", "board_member", "mentor", "investor", "service_provider", "university"]
     role_categories_open_to = rng.sample(open_to_pool, rng.randint(3, 5))
 
     avail_pool = ["full_time", "part_time", "fractional", "advisory", "internship"]
@@ -929,7 +929,7 @@ def build_synthetic_batch(
     n_mentors: int = 25,
     n_investors: int = 25,
     n_service_providers: int = 22,
-    n_educators: int = 18,
+    n_university: int = 18,
     n_startups: int = 120,
 ) -> dict[str, list[dict[str, Any]]]:
     """Generate a deterministic batch of synthetic talents and startups.
@@ -951,7 +951,7 @@ def build_synthetic_batch(
         (n_mentors, _gen_mentor),
         (n_investors, _gen_investor),
         (n_service_providers, _gen_service_provider),
-        (n_educators, _gen_educator),
+        (n_university, _gen_university),
     ]
 
     idx = 0
@@ -1019,19 +1019,19 @@ _ROLE_FOLLOW_AFFINITY: dict[tuple[str, str], float] = {
     # Educators bridge academia and industry: students follow their professors,
     # founders connect to professors for tech-transfer / lab partnerships,
     # and faculty cross-follow inside their cohort.
-    ("student", "educator"): 4.0,
-    ("intern", "educator"): 3.0,
-    ("educator", "student"): 1.5,
-    ("educator", "intern"): 1.0,
-    ("educator", "educator"): 2.0,
-    ("educator", "operator"): 1.5,
-    ("educator", "executive"): 2.0,
-    ("educator", "advisor"): 1.5,
-    ("educator", "investor"): 1.5,
-    ("operator", "educator"): 1.5,
-    ("executive", "educator"): 1.5,
-    ("advisor", "educator"): 1.5,
-    ("mentor", "educator"): 1.5,
+    ("student", "university"): 4.0,
+    ("intern", "university"): 3.0,
+    ("university", "student"): 1.5,
+    ("university", "intern"): 1.0,
+    ("university", "university"): 2.0,
+    ("university", "operator"): 1.5,
+    ("university", "executive"): 2.0,
+    ("university", "advisor"): 1.5,
+    ("university", "investor"): 1.5,
+    ("operator", "university"): 1.5,
+    ("executive", "university"): 1.5,
+    ("advisor", "university"): 1.5,
+    ("mentor", "university"): 1.5,
 }
 
 
@@ -1204,7 +1204,7 @@ _TALENT_HIGHLIGHT_TEMPLATES: dict[str, list[str]] = {
         "Worked with {n}+ pre-seed and seed Utah companies",
         "Flat-fee packages for {stage} startups",
     ],
-    "educator": [
+    "university": [
         "Faculty at {school} — runs {sector_lab}",
         "Has placed {n} graduate students into Utah startups",
         "Published in top {sector} venues",
@@ -1412,7 +1412,7 @@ def _talent_bio_extended(rng: random.Random, talent: dict[str, Any]) -> str:
         "mentor": "Mentoring early-stage founders, mostly free of charge.",
         "investor": "Active investor in Utah, prefers to lead.",
         "service_provider": "Built the practice around startup-friendly engagements.",
-        "educator": "Bridges the lab to early-stage founders, pro-bono.",
+        "university": "Bridges the lab to early-stage founders, pro-bono.",
     }
     chunks.append(motivations.get(talent.get("role_category", "operator"), motivations["operator"]))
 
