@@ -1,0 +1,46 @@
+version: '3'
+
+# Nucleus Institute — Utah Innovation Connections Hub
+#
+# SQLite-backed (file at backend/data/nucleus.db). No Docker needed.
+# Mirrors the HEAL fastapi-1password-template's `env:generate` pattern: every
+# item in the NUCLEUS 1Password vault becomes one line in backend/.env (item
+# title is the env var name, the `password` field is the value).
+#
+# Quickstart:
+#   task env:generate    # populate backend/.env from 1Password NUCLEUS vault
+#   task dev             # run uvicorn with reload
+
+vars:
+  APP_NAME: nucleus
+  EXTERNAL_PORT: "8765"
+
+tasks:
+  env:generate:
+    desc: "Generate backend/.env from the NUCLEUS 1Password vault"
+    preconditions:
+      - sh: command -v op >/dev/null 2>&1
+        msg: "1Password CLI not installed. brew install --cask 1password-cli"
+      - sh: op account list >/dev/null 2>&1
+        msg: "Not signed into 1Password. Run: op signin"
+    cmds:
+      - ./scripts/generate-env.sh
+
+  dev:
+    desc: "Run uvicorn on host with reload (SQLite — no Postgres needed)"
+    dir: backend
+    cmds:
+      - uv run uvicorn app.main:app --reload --host 127.0.0.1 --port {{.EXTERNAL_PORT}}
+
+  clean:
+    desc: "Remove Python caches"
+    cmds:
+      - find backend -type d -name __pycache__ -prune -exec rm -rf {} +
+
+  clean:all:
+    desc: "Wipe SQLite DB, generated .env, and Python caches"
+    prompt: "This deletes backend/data/nucleus.db and backend/.env. Continue?"
+    cmds:
+      - rm -f backend/data/nucleus.db
+      - rm -f backend/.env
+      - find backend -type d -name __pycache__ -prune -exec rm -rf {} +

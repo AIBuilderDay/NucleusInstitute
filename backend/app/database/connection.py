@@ -1,14 +1,17 @@
 """Async SQLAlchemy engine + session factory + declarative base.
 
-Mirrors the HEAL FastAPI template (`backend/app/database/connection.py`):
-- One async engine per process (psycopg driver).
+- One async engine per process (aiosqlite driver — SQLite, file-backed).
 - One session per request via the `get_session` FastAPI dependency.
 - `Base` is the parent of all ORM models.
 - `init_db()` runs `create_all()` on startup so we don't need Alembic during the hackathon.
+- For SQLite, the parent directory of the DB file is created if missing so a
+  fresh checkout can boot without a manual mkdir.
 """
 
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
+from sqlalchemy.engine.url import make_url
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -22,18 +25,22 @@ from app.core.config import settings
 logger = settings.logger
 
 
+def _ensure_sqlite_parent_dir(url_str: str) -> None:
+    url = make_url(url_str)
+    if url.get_backend_name() != "sqlite":
+        return
+    db_path = url.database
+    if not db_path or db_path == ":memory:":
+        return
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+
+
 def _create_engine() -> AsyncEngine:
-    logger.info("Initializing async PostgreSQL database connection")
-    return create_async_engine(
-        settings.database_url,
-        pool_size=15,
-        max_overflow=15,
-        pool_timeout=30,
-        pool_recycle=3600,
-        pool_pre_ping=True,
-        pool_use_lifo=True,
-        echo=False,
-    )
+    _ensure_sqlite_parent_dir(settings.database_url)
+    logger.info(f"Initializing async DB connection: {settings.database_url}")
+    # SQLite ignores Postgres-style pool args; connect_args sets isolation_level
+    # to None (autocommit) so SQLAlchemy controls transactions explicitly.
+    return create_async_engine(settings.database_url, echo=False)
 
 
 engine: AsyncEngine = _create_engine()

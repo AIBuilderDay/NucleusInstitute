@@ -20,8 +20,8 @@
 ### Nothing has been executed yet (as of phase 1 mid-build)
 The whole backend compiles in my head, but no `uv sync`, no Postgres up, no uvicorn run at the time these notes were written. **Don't trust "it should work" — verify with a curl.** First real run will surface real integration bugs.
 
-### JSONB mutation hazard
-SQLAlchemy does NOT track in-place mutations of JSONB columns. This will silently lose updates:
+### JSON mutation hazard
+SQLAlchemy does NOT track in-place mutations of `JSON` columns (was `JSONB` under Postgres; same hazard with the SQLite-backed `JSON` we use now). This will silently lose updates:
 
 ```python
 talent.skills.append("python")
@@ -35,6 +35,13 @@ talent.skills = [*talent.skills, "python"]            # reassign
 ```
 
 Bake this into the talent_service / startup_service when writing update methods.
+
+### SQLite reality check
+We're now on SQLite (`backend/data/nucleus.db`, `aiosqlite` driver). Things to know:
+- **Single writer.** SQLite serializes writes. Fine for a hackathon demo + one frontend. If we ever spin up worker processes that write concurrently, expect `database is locked` errors.
+- **No JSON containment queries.** Postgres JSONB lets you `WHERE skills @> '["python"]'`; SQLite stores `JSON` as TEXT. Phase-1 RuleFilter loads everything into Python and filters in-app, so this is irrelevant today. If we add server-side JSON filtering, swap back to Postgres.
+- **`Uuid` storage.** SA 2.0 `Uuid` stores as 32-char hex on SQLite. Querying via raw SQL needs the dashless form.
+- **`task clean:all` deletes the DB file.** It's gone — no volume to detach. Generator re-runs on next `task dev`.
 
 ### Matcher registry instantiates eagerly
 `@register_matcher` calls `cls()` at import time of `app.provider.matching` — fine for `RuleFilterMatcher` because it's stateless. When we add the embedding matcher, **lazy-load the model weights inside `match_*` methods**, not in `__init__`. Otherwise app startup gets slow and tests that import the package pay the cost too.
