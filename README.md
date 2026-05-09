@@ -450,6 +450,58 @@ restarts.
 
 ---
 
+## "How can I connect?" — agentic outreach strategy
+
+Looking at someone's profile and not sure how to reach out? `POST
+/api/v1/connect/strategy` runs a Claude agent that drafts the answer.
+
+```bash
+curl -X POST http://127.0.0.1:8765/api/v1/connect/strategy \
+  -H 'content-type: application/json' \
+  -d '{"viewer_type":"talent","viewer_id":"<you>",
+       "target_type":"talent","target_id":"<them>"}'
+```
+
+The response is a **deliberate split** between things the system can prove and
+things the agent can suggest:
+
+- **Server-computed structural facts** (never agent-supplied):
+  `already_connected`, `target_follows_viewer`, `mutual_connections_count`
+  + named bridge people, and PageRank brackets for both ends. Pulled from the
+  same DAOs and `NetworkService` the standalone follow/network endpoints use,
+  so it can never lie about whether you actually follow someone.
+- **Agent-written prose**: 2–4 `fit_bullets` (why you're a fit), 3–5
+  `approach_bullets` (channel, hook, do/don't), 3–5 `questions_to_ask`
+  anchored on real fields from the target's profile (prior companies,
+  projects, headline), plus a self-reported `confidence` ∈ [0, 1] and
+  bucketed label (`low`/`medium`/`high`).
+
+**What it accomplishes.** The matching surfaces (`/match`, `/discover`) tell
+you *who* to reach out to. This endpoint tells you *how*. Instead of staring
+at a profile, the user gets a ready-to-skim plan: are we already connected,
+who do we both know, what's our shared vocabulary, what's the warm-intro path
+through the follow graph, and what specific things should the first message
+actually say. Confidence comes back honest — the agent will say "low" when
+overlap is thin, so users learn to calibrate their outreach instead of
+firing off identical templates.
+
+The agent gets seven read-only MCP tools — `get_viewer_profile`,
+`get_target_profile`, `get_overlap` (sectors / skills / missions / alma
+maters / prior companies), `get_connection_status`, `get_warm_intros` (up
+to 12 bridge people in the follow graph), `get_network_context` (PageRank
+brackets), `get_match_score` (the same `rule_filter._score_pair` the matcher
+uses) — all closed over the request's DAOFactory, no HTTP loopback.
+
+Costs 1–6 Anthropic calls per request (typically 2 — one to fan out tools,
+one to emit the JSON envelope). Returns 503 if `ANTHROPIC_API_KEY` is unset,
+404 if either entity doesn't exist. Files:
+[backend/app/api/connect.py](backend/app/api/connect.py),
+[backend/app/service/connect_service.py](backend/app/service/connect_service.py),
+[backend/app/mcp/connect_server.py](backend/app/mcp/connect_server.py),
+[backend/app/model/schema/connect.py](backend/app/model/schema/connect.py).
+
+---
+
 ## Onboarding: "Connect with LinkedIn or Google" → agent-built profile
 
 A second Claude agent owns onboarding. Connect-with-LinkedIn gives us identity
