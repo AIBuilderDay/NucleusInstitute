@@ -114,6 +114,27 @@ class Settings(BaseSettings):
     email_reply_to_default: str | None = None
 
     # -------------------------------------------------------------------------
+    # Auto-match weekly digest. APScheduler wakes up every
+    # `auto_match_tick_minutes` and processes any AutoMatchSubscription whose
+    # last_run_at is older than its frequency_days. The cron uses the default
+    # matcher, filters out targets in `auto_match_sent` and the swiper's
+    # `passed_*_ids`, and prioritizes targets in `liked_*_ids`.
+    # -------------------------------------------------------------------------
+    auto_match_enabled: bool = True
+    auto_match_tick_minutes: int = 60
+    # Max matches included in a single weekly digest email. Hard-capped at this
+    # value server-side; subscribe requests asking for more are clamped down.
+    auto_match_max_per_email: int = 5
+    auto_match_default_top_k: int = 5
+    auto_match_default_frequency_days: int = 7
+    # How many candidates to ask the matcher for per run. Must be > top_k so
+    # there's headroom after filtering already-sent + already-passed targets.
+    auto_match_candidate_pool: int = 25
+    # Public base URL the digest links back to. The email points users at
+    # `{frontend_base_url}/profile/{kind}/{id}` for each match.
+    frontend_base_url: str = "http://localhost:5173"
+
+    # -------------------------------------------------------------------------
     # Sentry (optional — wire later, all fields tolerate absence).
     # -------------------------------------------------------------------------
     sentry_dsn: str | None = None

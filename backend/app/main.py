@@ -1,8 +1,9 @@
 """FastAPI application entry point.
 
 Lifespan:
-- on startup: ensure DB schema (`init_db`) + optionally seed synthetic Utah data
-- on shutdown: nothing for now (engine is module-level singleton)
+- on startup: ensure DB schema (`init_db`) + optionally seed synthetic Utah
+  data; start the auto-match APScheduler tick.
+- on shutdown: stop the scheduler.
 
 Router prefixes (all under /api/v1):
 - /health
@@ -14,14 +15,20 @@ Router prefixes (all under /api/v1):
 - /auth
 - /onboard
 - /email
+- /auto-match
 """
 
 from contextlib import asynccontextmanager
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+# Importing this package triggers @register_matcher decorators so the registry
+# is hydrated before any request can route through MatchingService.
+import app.provider.matching  # noqa: F401
 from app.api.auth import router as auth_router
+from app.api.auto_match import router as auto_match_router
 from app.api.connect import router as connect_router
 from app.api.discovery import router as discovery_router
 from app.api.email import router as email_router
@@ -29,13 +36,11 @@ from app.api.health import router as health_router
 from app.api.match import router as match_router
 from app.api.onboard import router as onboard_router
 from app.api.startup import router as startup_router
+from app.api.swipe import router as swipe_router
 from app.api.talent import router as talent_router
 from app.core.config import settings
 from app.database.connection import init_db, session_factory
-
-# Importing this package triggers @register_matcher decorators so the registry
-# is hydrated before any request can route through MatchingService.
-import app.provider.matching  # noqa: F401
+from app.service.auto_match_service import run_auto_match_tick
 
 logger = settings.logger
 
@@ -66,8 +71,45 @@ async def lifespan(app: FastAPI):
             else:
                 logger.info("Seed skipped — DB already has rows")
 
+    scheduler: AsyncIOScheduler | None = None
+    if settings.auto_match_enabled:
+        scheduler = AsyncIOScheduler()
+        scheduler.add_job(
+            _auto_match_tick_job,
+            trigger="interval",
+            minutes=settings.auto_match_tick_minutes,
+            id="auto_match_tick",
+            # Avoid pile-ups if a tick takes longer than the interval.
+            coalesce=True,
+            max_instances=1,
+            next_run_time=None,
+        )
+        scheduler.start()
+        logger.info(
+            f"Auto-match scheduler started; ticks every "
+            f"{settings.auto_match_tick_minutes} min"
+        )
+
     yield
+
+    if scheduler is not None:
+        scheduler.shutdown(wait=False)
     logger.info("Shutting down")
+
+
+async def _auto_match_tick_job() -> None:
+    """APScheduler entry point — wraps the service tick so scheduler errors
+    don't escape into the event loop."""
+    try:
+        reports = await run_auto_match_tick()
+        if reports:
+            sent_total = sum(r.emails_sent for r in reports)
+            logger.info(
+                f"Auto-match tick: processed {len(reports)} subscription(s), "
+                f"sent {sent_total} email(s)"
+            )
+    except Exception as exc:  # noqa: BLE001 — never crash the scheduler
+        logger.warning(f"Auto-match tick failed: {exc}")
 
 
 app = FastAPI(
@@ -93,6 +135,8 @@ app.include_router(startup_router, prefix=f"{API_PREFIX}/startup", tags=["startu
 app.include_router(match_router, prefix=f"{API_PREFIX}/match", tags=["match"])
 app.include_router(discovery_router, prefix=f"{API_PREFIX}/discover", tags=["discover"])
 app.include_router(connect_router, prefix=f"{API_PREFIX}/connect", tags=["connect"])
+app.include_router(swipe_router, prefix=f"{API_PREFIX}/swipe", tags=["swipe"])
 app.include_router(auth_router, prefix=f"{API_PREFIX}/auth", tags=["auth"])
 app.include_router(onboard_router, prefix=f"{API_PREFIX}/onboard", tags=["onboard"])
 app.include_router(email_router, prefix=f"{API_PREFIX}/email", tags=["email"])
+app.include_router(auto_match_router, prefix=f"{API_PREFIX}/auto-match", tags=["auto-match"])

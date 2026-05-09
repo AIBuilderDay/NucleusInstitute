@@ -348,6 +348,86 @@ next boot. See
 
 ---
 
+## Swipe lists — Tinder-style matched / passed tracking
+
+A lightweight persistence layer behind the swipe-card UI. After a discovery
+batch surfaces candidates, the user swipes right (matched) or left (passed)
+on each card; we keep the IDs so the next fetch can filter out anyone
+they've already seen and so the profile screen can render the two lists
+("matched" and "passed").
+
+### Storage
+
+One row per swiper in a single `swipe_list` table, composite-keyed on
+`(swiper_id, swiper_kind)` so a talent UUID and a startup UUID can't
+collide. Four JSON arrays store target IDs:
+
+| Column                | Populated for         | Meaning                                |
+|-----------------------|-----------------------|----------------------------------------|
+| `liked_talent_ids`    | talent + startup      | right-swipes on talents                |
+| `passed_talent_ids`   | talent + startup      | left-swipes on talents                 |
+| `liked_startup_ids`   | talent only           | right-swipes on startups               |
+| `passed_startup_ids`  | talent only           | left-swipes on startups                |
+
+The "context" of a swipe (looking for an investor? a mentor?) is **not**
+stored — the target talent's `role_category` already carries that info, and
+the front end groups by it at display time. Three legal swiper/target
+pairs; startups never swipe other startups (rejected with 400):
+
+```
+talent  → talent
+talent  → startup
+startup → talent
+```
+
+ORM:
+[backend/app/model/database/swipe_list.py](backend/app/model/database/swipe_list.py).
+
+### Endpoints
+
+```
+POST   /api/v1/swipe/talent/{swiper_id}/talent/{target_id}    body: {"liked": bool}
+DELETE /api/v1/swipe/talent/{swiper_id}/talent/{target_id}    undo (removes from both lists)
+POST   /api/v1/swipe/talent/{swiper_id}/startup/{target_id}   body: {"liked": bool}
+DELETE /api/v1/swipe/talent/{swiper_id}/startup/{target_id}
+POST   /api/v1/swipe/startup/{swiper_id}/talent/{target_id}   body: {"liked": bool}
+DELETE /api/v1/swipe/startup/{swiper_id}/talent/{target_id}
+
+GET    /api/v1/swipe/talent/{swiper_id}/talents               {matched: [...], passed: [...]}
+GET    /api/v1/swipe/talent/{swiper_id}/startups              {matched: [...], passed: [...]}
+GET    /api/v1/swipe/startup/{swiper_id}/talents              {matched: [...], passed: [...]}
+```
+
+POST is upsert: re-swiping the same target moves the ID between
+`liked_*` and `passed_*` so the lists stay disjoint and there are no
+duplicates. POST returns a small ack with the new list lengths so the
+front end can refresh counters without a refetch. GET hydrates the
+stored IDs into full `TalentResponse` / `StartupResponse` objects so the
+swipe-history view has everything it needs (including `role_category` for
+client-side grouping).
+
+Self-swipe (talent → same talent) and `startup → startup` are rejected
+with 400; missing swiper or target returns 404.
+
+### How the front end uses it
+
+1. The user sets their "looking for" preferences and the discovery filter
+   surfaces a candidate batch.
+2. The front end excludes IDs already present in any of the four lists
+   for that swiper, so already-seen profiles don't show up again.
+3. On each card swipe, the front end POSTs `{liked: true|false}`.
+4. The profile screen shows the two lists by calling the GET endpoints.
+
+### What's deferred
+
+- Mutual-match detection (both sides swiped right) and email notifications.
+- Pagination on the GET list endpoints — fine while lists are small.
+- Concurrent-update safety: JSON arrays are read-modify-write under SQLite,
+  which is OK at hackathon scale but would want row-level locking or a
+  normalized join table at real concurrency.
+
+---
+
 ## Following + network score (PageRank)
 
 Talent can follow other talent or startups. We run **PageRank** over the
@@ -799,6 +879,112 @@ Implementation:
 [backend/app/api/email.py](backend/app/api/email.py),
 [backend/app/service/email_service.py](backend/app/service/email_service.py),
 [backend/app/model/schema/email.py](backend/app/model/schema/email.py).
+
+---
+
+## Auto-match weekly digest — opt-in cron + agent-drafted emails
+
+Subscribers (talent or startup) get a weekly email with up to **5** match
+candidates picked by the existing matcher (`rule_filter` by default,
+swappable to `embedding` / `agentic_filter` via `default_matcher`). Each
+candidate gets its own short email drafted by an Anthropic-powered agent
+that reads sender + recipient profiles through a per-request MCP toolkit
+and returns `{subject, body_html}`. Sent via Resend (same key the
+outreach button uses). The cron runs in-process via APScheduler in the
+FastAPI lifespan; no external scheduler needed.
+
+### Tables
+
+- `auto_match_subscription` — `(subject_kind, subject_id)` opt-in registry,
+  `frequency_days`, `last_run_at`, `email_subject_override` +
+  `email_body_html_override` (both null → agent drafts; both set → digest
+  uses them verbatim).
+- `auto_match_sent` — write-once log of every `(subject, target)` pair the
+  digest has emailed; filtered out of future runs so a subscriber never
+  sees the same match twice.
+
+### Match selection (per subscriber, per run)
+
+1. Run the configured matcher to pull a wide candidate pool
+   (`AUTO_MATCH_CANDIDATE_POOL`, default 25).
+2. Drop targets already in `auto_match_sent` for this subscriber.
+3. Drop targets the subscriber swiped 'no' on (`passed_*_ids` in their
+   [swipe_list](backend/app/model/database/swipe_list.py)).
+4. Bubble targets the subscriber swiped 'yes' on (`liked_*_ids`) to the
+   top by score.
+5. Cap at `AUTO_MATCH_MAX_PER_EMAIL` (default 5) and email each one.
+
+Note: subscribing does **not** auto-email anyone the subscriber hasn't
+already swiped — swipes are an exclusion / priority signal only, never
+a trigger.
+
+### Email drafter
+
+The drafter agent uses a dedicated per-request FastMCP server
+([backend/app/mcp/auto_match_email_server.py](backend/app/mcp/auto_match_email_server.py))
+with four read-only tools: `get_sender_profile`, `get_recipient_profile`,
+`get_match_details`, `get_overlap`. The system prompt enforces that every
+email clearly states it's an automated notification from Nucleus and
+that the subscriber should reach out themselves if they want to connect
+— Nucleus is surfacing the match, not making an introduction. If
+`ANTHROPIC_API_KEY` is missing or the agent fails, a deterministic
+template is used as fallback so the digest still ships.
+
+### Endpoints
+
+```bash
+# Subscribe (or update / re-activate). Both override fields must be set
+# together or both be null. If both set, the digest uses them verbatim
+# instead of running the drafter agent.
+curl -X POST http://localhost:8765/api/v1/auto-match/subscribe \
+  -H 'content-type: application/json' \
+  -d '{
+    "subject_kind": "talent",
+    "subject_id": "<uuid>",
+    "frequency_days": 7,
+    "email_subject_override": null,
+    "email_body_html_override": null
+  }'
+
+# Soft-disable
+curl -X DELETE http://localhost:8765/api/v1/auto-match/subscribe/talent/<uuid>
+
+# List all
+curl http://localhost:8765/api/v1/auto-match/subscriptions
+
+# Manual triggers (cron uses the same code path)
+curl -X POST http://localhost:8765/api/v1/auto-match/run-now
+curl -X POST http://localhost:8765/api/v1/auto-match/run-now/talent/<uuid>
+```
+
+`run-now` returns a `RunReport` per processed subscription:
+`matches_considered`, `emails_sent`, `skipped`, `used_override`, plus a
+`notes` array with any per-match warnings (e.g. "drafter fell back",
+"resend error: …").
+
+### Setup
+
+```
+AUTO_MATCH_ENABLED=true              # default
+AUTO_MATCH_TICK_MINUTES=60           # how often the scheduler wakes up
+AUTO_MATCH_MAX_PER_EMAIL=5           # hard cap; lowered will clamp future runs
+AUTO_MATCH_DEFAULT_FREQUENCY_DAYS=7  # default per-subscription cadence
+AUTO_MATCH_CANDIDATE_POOL=25         # matcher headroom before filtering
+```
+
+If `RESEND_API_KEY` is unset, the cron logs a dry-run line per match and
+does NOT record the sent-pair — re-add the key and the next tick will
+catch up.
+
+Implementation:
+[backend/app/api/auto_match.py](backend/app/api/auto_match.py),
+[backend/app/service/auto_match_service.py](backend/app/service/auto_match_service.py),
+[backend/app/dao/daos/auto_match_dao.py](backend/app/dao/daos/auto_match_dao.py),
+[backend/app/model/database/auto_match.py](backend/app/model/database/auto_match.py),
+[backend/app/model/schema/auto_match.py](backend/app/model/schema/auto_match.py),
+[backend/app/mcp/auto_match_email_server.py](backend/app/mcp/auto_match_email_server.py),
+[backend/app/provider/auto_match/email_drafter.py](backend/app/provider/auto_match/email_drafter.py),
+[backend/app/main.py](backend/app/main.py) (APScheduler wiring in lifespan).
 
 ---
 
