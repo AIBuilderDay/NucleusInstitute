@@ -1445,11 +1445,23 @@ def build_talent_extension(talent: dict[str, Any]) -> dict[str, Any]:
         f"https://resumes.{_DOMAIN}/{slug}.pdf" if rng.random() < 0.55 else None
     )
 
+    education_entries = talent.get("education") or []
+    primary_education = education_entries[0] if education_entries else {}
+    degree = primary_education.get("degree") if isinstance(primary_education, dict) else None
+    university = (
+        primary_education.get("school") if isinstance(primary_education, dict) else None
+    )
+    if not university:
+        affiliations = talent.get("university_affiliations") or []
+        university = affiliations[0] if affiliations else None
+
     return {
         "bio_extended": _talent_bio_extended(rng, talent),
         "resume_url": resume_url,
         "image_url": image_url,
         "cover_image_url": cover_image_url,
+        "degree": degree,
+        "university": university,
         "links": _talent_links(rng, talent),
         "projects": _talent_projects(rng, talent),
         "highlights": _talent_highlights(rng, talent),

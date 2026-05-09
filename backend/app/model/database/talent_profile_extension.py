@@ -29,6 +29,8 @@ class TalentProfileExtension(Base):
     resume_url: Mapped[str | None] = mapped_column(String(1000))
     image_url: Mapped[str | None] = mapped_column(String(1000))
     cover_image_url: Mapped[str | None] = mapped_column(String(1000))
+    degree: Mapped[str | None] = mapped_column(String(200))
+    university: Mapped[str | None] = mapped_column(String(300))
 
     links: Mapped[dict] = mapped_column(JSON, default=dict)
     projects: Mapped[list[dict]] = mapped_column(JSON, default=list)

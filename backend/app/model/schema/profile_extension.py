@@ -22,6 +22,8 @@ class TalentProfileExtensionBase(BaseModel):
     resume_url: str | None = None
     image_url: str | None = None
     cover_image_url: str | None = None
+    degree: str | None = None
+    university: str | None = None
     links: dict[str, str] = Field(default_factory=dict)
     projects: list[ProjectEntry] = Field(default_factory=list)
     highlights: list[str] = Field(default_factory=list)
