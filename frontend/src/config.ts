@@ -7,7 +7,9 @@
 // developer can repoint the frontend without rebuilding.
 
 const ENV_BASE = import.meta.env.VITE_API_BASE_URL?.trim();
-const FALLBACK_BASE = "http://localhost:8765";
+// In prod, fall back to "" so requests go relative and Vercel rewrites
+// (see vercel.json) proxy them to the Render backend. In dev, hit FastAPI directly.
+const FALLBACK_BASE = import.meta.env.PROD ? "" : "http://localhost:8765";
 
 function resolveBase(): string {
   if (typeof localStorage !== "undefined") {
