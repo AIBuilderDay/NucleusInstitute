@@ -26,6 +26,7 @@ from app.core.config import settings
 from app.dao.factory import DAOFactory
 from app.model.database.talent import Talent
 from app.model.schema.auth import (
+    ExtractKeywordsResponse,
     GoogleUserInfo,
     InferInterestsResponse,
     LinkedInUserInfo,
@@ -508,6 +509,68 @@ class OnboardService:
             f"LINKEDIN OIDC USERINFO:\n{info_json}\n\n"
             "Use web_search to look them up, then output the JSON envelope."
         )
+
+    # -------------------------------------------------------------------------
+    # Keyword extraction (Ecosystem page) — distill user free-form text into
+    # concise matchable tags. Used by the InterestModal to suggest filter
+    # additions based on what the user typed in "Anything else?".
+    # -------------------------------------------------------------------------
+
+    async def extract_keywords(self, *, text: str) -> ExtractKeywordsResponse:
+        """One-shot, no tools. Cheap call (~$0.001) — should return in 1–2s."""
+        client = self._get_client()  # raises 503 if no key
+
+        system = (
+            "You distill free-form user prose into a small set of concise "
+            "matchable keywords for an Innovate-Utah ecosystem matcher.\n\n"
+            "RULES:\n"
+            "- Output 3-8 keywords, lowercase, each 1-3 words.\n"
+            "- Each keyword should appear plausibly in a state-program "
+            "description (e.g. 'fda', 'clinical trials', 'workforce', "
+            "'rural', 'manufacturing', 'angel investors', 'veteran').\n"
+            "- Skip filler words, locations already obvious, polite framing, "
+            "and the user's own name.\n"
+            "- Output ONLY a JSON object: {\"keywords\": [\"...\", \"...\"]}. "
+            "No prose, no markdown."
+        )
+
+        user_msg = (
+            f"User text:\n{text.strip()}\n\n"
+            "Return the JSON now."
+        )
+
+        response = await client.messages.create(
+            model=MODEL_ID,
+            max_tokens=512,
+            system=system,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+
+        final_text = "".join(
+            getattr(b, "text", "")
+            for b in response.content
+            if getattr(b, "type", None) == "text"
+        )
+        parsed = _extract_json_object(final_text)
+        if not parsed:
+            return ExtractKeywordsResponse(keywords=[])
+
+        raw = parsed.get("keywords")
+        if not isinstance(raw, list):
+            return ExtractKeywordsResponse(keywords=[])
+        cleaned = [
+            str(k).strip().lower()
+            for k in raw
+            if isinstance(k, str) and k.strip()
+        ]
+        # de-dupe, cap
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for k in cleaned:
+            if k not in seen:
+                seen.add(k)
+                deduped.append(k)
+        return ExtractKeywordsResponse(keywords=deduped[:8])
 
 
 def _extract_json_object(text: str) -> dict[str, Any] | None:

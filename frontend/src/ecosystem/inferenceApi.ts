@@ -114,3 +114,25 @@ function mockInference(u: LinkedInUserinfo): InferredInterests {
 export function linkedInLoginUrl(): string {
   return `${API_BASE_URL}${API_PREFIX}/auth/linkedin/login`;
 }
+
+/**
+ * Distill a user's free-form prose into 3-8 concise matchable keywords.
+ * Backed by `POST /onboard/extract-keywords` which runs a short Claude call.
+ * Returns [] on failure so the UI can degrade gracefully.
+ */
+export async function extractKeywords(text: string): Promise<string[]> {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  try {
+    const r = await fetch(`${API_BASE_URL}${API_PREFIX}/onboard/extract-keywords`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ text: trimmed }),
+    });
+    if (!r.ok) return [];
+    const data = (await r.json()) as { keywords?: string[] };
+    return Array.isArray(data.keywords) ? data.keywords : [];
+  } catch {
+    return [];
+  }
+}

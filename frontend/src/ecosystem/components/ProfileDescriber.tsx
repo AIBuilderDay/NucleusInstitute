@@ -95,7 +95,7 @@ export function ProfileDescriber({ match, onEdit, onReset }: ProfileDescriberPro
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
+          gridTemplateColumns: "repeat(4, 1fr)",
           gap: 16,
         }}
       >
@@ -125,7 +125,25 @@ export function ProfileDescriber({ match, onEdit, onReset }: ProfileDescriberPro
             />
           )}
         </Cell>
+        <Cell label="Within">
+          <ChipRow
+            items={[
+              match.distanceMaxMiles == null
+                ? "Statewide"
+                : `${match.distanceMaxMiles} mi`,
+            ]}
+            tone="copper"
+          />
+        </Cell>
       </div>
+      {match.keywords.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <div className="tiny-caps" style={{ marginBottom: 6 }}>
+            Keywords
+          </div>
+          <ChipRow items={match.keywords} />
+        </div>
+      )}
     </section>
   );
 }

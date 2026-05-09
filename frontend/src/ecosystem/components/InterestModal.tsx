@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { InferredInterests, LinkedInUserinfo } from "../inferenceApi";
-import { inferInterests } from "../inferenceApi";
+import { extractKeywords, inferInterests } from "../inferenceApi";
 import type { UserMatch } from "../EcosystemContext";
 import { ParticleNetwork } from "./ParticleNetwork";
 
@@ -83,7 +83,14 @@ export function InterestModal({
   const [lookingFor, setLookingFor] = useState<UserMatch["lookingFor"]>(
     editingMatch?.lookingFor ?? ["both"],
   );
+  const [distanceMaxMiles, setDistanceMaxMiles] = useState<number | null>(
+    editingMatch?.distanceMaxMiles ?? null,
+  );
   const [refineNote, setRefineNote] = useState("");
+  const [keywords, setKeywords] = useState<string[]>(editingMatch?.keywords ?? []);
+  const [suggestedKeywords, setSuggestedKeywords] = useState<string[]>([]);
+  const [keywordLoading, setKeywordLoading] = useState(false);
+  const [keywordError, setKeywordError] = useState<string | null>(null);
 
   const startedAt = useMemo(() => Date.now(), []);
 
@@ -120,6 +127,45 @@ export function InterestModal({
   const toggle = <T extends string>(arr: T[], v: T): T[] =>
     arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
 
+  const handleSuggestKeywords = async () => {
+    if (!refineNote.trim()) return;
+    setKeywordLoading(true);
+    setKeywordError(null);
+    try {
+      const tags = await extractKeywords(refineNote);
+      // Merge new suggestions in, dedupe with existing
+      setSuggestedKeywords((prev) => {
+        const seen = new Set(prev);
+        const merged = [...prev];
+        for (const t of tags) {
+          if (!seen.has(t)) {
+            seen.add(t);
+            merged.push(t);
+          }
+        }
+        return merged;
+      });
+      // Auto-add the new suggestions to active keywords. The user can untoggle
+      // any they don't like. This makes the AI feel "active" rather than
+      // requiring a second click for everything.
+      setKeywords((prev) => {
+        const seen = new Set(prev);
+        const merged = [...prev];
+        for (const t of tags) {
+          if (!seen.has(t)) {
+            seen.add(t);
+            merged.push(t);
+          }
+        }
+        return merged;
+      });
+    } catch (e) {
+      setKeywordError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setKeywordLoading(false);
+    }
+  };
+
   const confirm = () => {
     const identity = userinfo
       ? {
@@ -138,6 +184,8 @@ export function InterestModal({
       sectors,
       stages,
       lookingFor,
+      distanceMaxMiles,
+      keywords,
       evidence: [
         ...(inferred?.evidence ?? editingMatch?.evidence ?? []),
         ...(refineNote ? [`User added: "${refineNote}"`] : []),
@@ -201,8 +249,16 @@ export function InterestModal({
             setStages={setStages}
             lookingFor={lookingFor}
             setLookingFor={setLookingFor}
+            distanceMaxMiles={distanceMaxMiles}
+            setDistanceMaxMiles={setDistanceMaxMiles}
             refineNote={refineNote}
             setRefineNote={setRefineNote}
+            keywords={keywords}
+            setKeywords={setKeywords}
+            suggestedKeywords={suggestedKeywords}
+            keywordLoading={keywordLoading}
+            keywordError={keywordError}
+            onSuggestKeywords={handleSuggestKeywords}
             onCancel={onCancel}
             onConfirm={confirm}
             toggle={toggle}
@@ -293,8 +349,16 @@ interface ConfirmPhaseProps {
   setStages: (v: string[]) => void;
   lookingFor: UserMatch["lookingFor"];
   setLookingFor: (v: UserMatch["lookingFor"]) => void;
+  distanceMaxMiles: number | null;
+  setDistanceMaxMiles: (v: number | null) => void;
   refineNote: string;
   setRefineNote: (v: string) => void;
+  keywords: string[];
+  setKeywords: (v: string[] | ((prev: string[]) => string[])) => void;
+  suggestedKeywords: string[];
+  keywordLoading: boolean;
+  keywordError: string | null;
+  onSuggestKeywords: () => void;
   onCancel: () => void;
   onConfirm: () => void;
   toggle: <T extends string>(arr: T[], v: T) => T[];
@@ -312,8 +376,16 @@ function ConfirmPhase({
   setStages,
   lookingFor,
   setLookingFor,
+  distanceMaxMiles,
+  setDistanceMaxMiles,
   refineNote,
   setRefineNote,
+  keywords,
+  setKeywords,
+  suggestedKeywords,
+  keywordLoading,
+  keywordError,
+  onSuggestKeywords,
   onCancel,
   onConfirm,
   toggle,
@@ -441,11 +513,15 @@ function ConfirmPhase({
         />
       </FieldGroup>
 
-      {/* — free text — */}
+      <FieldGroup label={`Distance from ${city || "your city"}`}>
+        <DistanceRow value={distanceMaxMiles} setValue={setDistanceMaxMiles} />
+      </FieldGroup>
+
+      {/* — free text + LLM keyword extraction — */}
       <FieldGroup label="Anything else? (optional)">
         <textarea
-          rows={2}
-          placeholder="e.g. I'm a solo founder in St. George looking to connect with manufacturing partners…"
+          rows={3}
+          placeholder="e.g. I'm a solo founder in St. George looking to connect with manufacturing partners and need help with FDA clearance…"
           value={refineNote}
           onChange={(e) => setRefineNote(e.target.value)}
           style={{
@@ -454,6 +530,74 @@ function ConfirmPhase({
             resize: "vertical",
           }}
         />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10,
+            marginTop: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          <span style={{ fontSize: 11, color: "var(--slate)", lineHeight: 1.4 }}>
+            ✦ The more detail you write, the more accurately our AI can match you.
+          </span>
+          <button
+            type="button"
+            onClick={onSuggestKeywords}
+            disabled={!refineNote.trim() || keywordLoading}
+            className="btn btn-ghost"
+            style={{ padding: "5px 11px", fontSize: 11.5 }}
+          >
+            {keywordLoading ? "Thinking…" : "Suggest keywords ✦"}
+          </button>
+        </div>
+        {keywordError && (
+          <div style={{ fontSize: 11, color: "#8a3a3a", marginTop: 6 }}>
+            ⚠ {keywordError}
+          </div>
+        )}
+        {(suggestedKeywords.length > 0 || keywords.length > 0) && (
+          <div style={{ marginTop: 10 }}>
+            <div className="tiny-caps" style={{ marginBottom: 6 }}>
+              Keywords (click to toggle)
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {/* show all known keywords (suggested + manual) — active ones blue */}
+              {Array.from(new Set([...keywords, ...suggestedKeywords])).map(
+                (k) => {
+                  const on = keywords.includes(k);
+                  return (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() =>
+                        setKeywords((prev) =>
+                          prev.includes(k)
+                            ? prev.filter((x) => x !== k)
+                            : [...prev, k],
+                        )
+                      }
+                      style={{
+                        padding: "4px 10px",
+                        borderRadius: 999,
+                        fontSize: 12,
+                        fontWeight: 500,
+                        border: `1px solid ${on ? "var(--nucleus-blue)" : "var(--color-border)"}`,
+                        background: on ? "var(--nucleus-blue)" : "var(--white)",
+                        color: on ? "var(--wasatch-whisper)" : "var(--charcoal)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {k}
+                    </button>
+                  );
+                },
+              )}
+            </div>
+          </div>
+        )}
       </FieldGroup>
 
       {/* — actions — */}
@@ -528,3 +672,46 @@ const selectInline: React.CSSProperties = {
   fontSize: 13,
   color: "var(--charcoal)",
 };
+
+const DISTANCE_OPTIONS: Array<{ value: number | null; label: string }> = [
+  { value: 10, label: "10 mi" },
+  { value: 25, label: "25 mi" },
+  { value: 50, label: "50 mi" },
+  { value: 100, label: "100 mi" },
+  { value: null, label: "Statewide" },
+];
+
+interface DistanceRowProps {
+  value: number | null;
+  setValue: (v: number | null) => void;
+}
+
+function DistanceRow({ value, setValue }: DistanceRowProps) {
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+      {DISTANCE_OPTIONS.map((opt) => {
+        const on = opt.value === value;
+        const key = opt.value === null ? "statewide" : String(opt.value);
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setValue(opt.value)}
+            style={{
+              padding: "6px 12px",
+              borderRadius: 999,
+              fontSize: 12.5,
+              fontWeight: 500,
+              border: `1px solid ${on ? "var(--nucleus-blue)" : "var(--color-border)"}`,
+              background: on ? "var(--nucleus-blue)" : "var(--white)",
+              color: on ? "var(--wasatch-whisper)" : "var(--charcoal)",
+              cursor: "pointer",
+            }}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}

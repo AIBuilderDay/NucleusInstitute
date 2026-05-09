@@ -139,3 +139,24 @@ class InferInterestsResponse(BaseModel):
     lookingFor: list[str] = Field(default_factory=lambda: ["both"])
     evidence: list[str] = Field(default_factory=list)
     confidence: Literal["low", "medium", "high"] = "low"
+
+
+class ExtractKeywordsRequest(BaseModel):
+    """Body for POST /onboard/extract-keywords.
+
+    Free-form prose from the user (resume blurb, 'anything else' textbox,
+    descriptions of what they're working on). The agent extracts concise
+    matchable tags so the matcher can score state resources / startups
+    against richer signal than just sector + stage.
+    """
+
+    text: str = Field(min_length=1, max_length=4000)
+
+
+class ExtractKeywordsResponse(BaseModel):
+    """Returns 3-10 lowercase keywords drawn from the input text. Each is a
+    short noun phrase suitable for substring matching against resource titles
+    + descriptions (e.g. 'fda', 'clinical trials', 'rural', 'workforce').
+    """
+
+    keywords: list[str] = Field(default_factory=list)

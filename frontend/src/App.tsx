@@ -18,7 +18,40 @@ interface MatchSeed {
   startup: Startup | null;
 }
 
+export interface OidcUser {
+  name: string;
+  email: string;
+  picture: string;
+  provider: "linkedin" | "google";
+}
+
 const POST_LOGIN_ROUTE_KEY = "nucleus.post_login_route";
+const OIDC_USER_KEY = "nucleus.oidc_user";
+
+function loadOidcUser(): OidcUser | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(OIDC_USER_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<OidcUser>;
+    if (parsed && typeof parsed.name === "string" && typeof parsed.picture === "string") {
+      return parsed as OidcUser;
+    }
+  } catch {
+    /* corrupt — ignore */
+  }
+  return null;
+}
+
+function persistOidcUser(u: OidcUser | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (u) localStorage.setItem(OIDC_USER_KEY, JSON.stringify(u));
+    else localStorage.removeItem(OIDC_USER_KEY);
+  } catch {
+    /* private mode — silently skip */
+  }
+}
 const VALID_POST_LOGIN_ROUTES: ReadonlyArray<Route> = [
   "ecosystem",
   "onboard",
@@ -71,6 +104,12 @@ export function App() {
   const [apiState, setApiState] = useState<PingResult>({ live: false });
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [oidcUser, setOidcUserState] = useState<OidcUser | null>(loadOidcUser);
+
+  const setOidcUser = (u: OidcUser | null) => {
+    setOidcUserState(u);
+    persistOidcUser(u);
+  };
 
   useEffect(() => {
     let dead = false;
@@ -145,6 +184,8 @@ export function App() {
         onSelectPerson={goMatchPerson}
         onSelectStartup={goMatchStartup}
         minimal={route === "onboard"}
+        oidcUser={oidcUser}
+        onSignOut={() => setOidcUser(null)}
       />
       <div className="sidenav-content">
         {loadError && (
@@ -232,7 +273,13 @@ export function App() {
                 apiLive={apiState.live}
               />
             )}
-            {route === "ecosystem" && <EcosystemPage />}
+            {route === "ecosystem" && (
+              <EcosystemPage
+                onSignedIn={(name, email, picture) =>
+                  setOidcUser({ name, email, picture, provider: "linkedin" })
+                }
+              />
+            )}
           </main>
         )}
 

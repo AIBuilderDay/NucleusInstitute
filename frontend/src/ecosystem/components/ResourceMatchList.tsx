@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import type { UserMatch } from "../EcosystemContext";
 import { loadResources, type Resource } from "../data/resourcesLoader";
-import { rankResources, type RankedResource } from "../data/resourceScoring";
+import {
+  rankResources,
+  resourceDistanceMiles,
+  type RankedResource,
+} from "../data/resourceScoring";
+import { coordsFor } from "../utah-startup-map/data/cityCoords";
 
 const PAGE_SIZE = 5;
 
@@ -37,10 +42,23 @@ export function ResourceMatchList({ match }: ResourceMatchListProps) {
     setPage(0);
   }, [match]);
 
+  const userCoords = useMemo<[number, number] | null>(
+    () => (match.city ? coordsFor(match.city, "user-anchor") : null),
+    [match.city],
+  );
+
   const ranked = useMemo<RankedResource[]>(() => {
     if (!all.length) return [];
-    return rankResources(all, match);
-  }, [all, match]);
+    const ranked = rankResources(all, match);
+    if (match.distanceMaxMiles == null) return ranked;
+    // Apply distance filter — keep resources within X miles of the user's city.
+    // Resources with no listed locations fall through (treated as statewide).
+    return ranked.filter(({ resource }) => {
+      if (resource.locations.length === 0) return true; // statewide
+      const d = resourceDistanceMiles(resource, userCoords);
+      return d <= match.distanceMaxMiles!;
+    });
+  }, [all, match, userCoords]);
 
   const totalPages = Math.max(1, Math.ceil(ranked.length / PAGE_SIZE));
   const pageItems = ranked.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -98,7 +116,12 @@ export function ResourceMatchList({ match }: ResourceMatchListProps) {
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {pageItems.map((r, i) => (
-          <ResourceCard key={r.resource.id} ranked={r} index={page * PAGE_SIZE + i + 1} />
+          <ResourceCard
+            key={r.resource.id}
+            ranked={r}
+            index={page * PAGE_SIZE + i + 1}
+            userCoords={userCoords}
+          />
         ))}
         {pageItems.length === 0 && (
           <div
@@ -155,11 +178,19 @@ export function ResourceMatchList({ match }: ResourceMatchListProps) {
 function ResourceCard({
   ranked,
   index,
+  userCoords,
 }: {
   ranked: RankedResource;
   index: number;
+  userCoords: [number, number] | null;
 }) {
   const r = ranked.resource;
+  const distMiles = useMemo(() => {
+    if (!userCoords) return null;
+    if (r.locations.length === 0) return null; // statewide
+    const d = resourceDistanceMiles(r, userCoords);
+    return Number.isFinite(d) ? Math.round(d) : null;
+  }, [r, userCoords]);
   return (
     <div className="card card-hover" style={{ padding: "14px 16px" }}>
       <div
@@ -170,17 +201,29 @@ function ResourceCard({
           alignItems: "flex-start",
         }}
       >
-        <span
-          className="mono"
-          style={{
-            fontSize: 11,
-            color: "var(--slate-light)",
-            paddingTop: 4,
-            minWidth: 24,
-          }}
-        >
-          #{String(index).padStart(2, "0")}
-        </span>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, paddingTop: 4 }}>
+          <span
+            className="mono"
+            style={{ fontSize: 11, color: "var(--slate-light)", minWidth: 24 }}
+          >
+            #{String(index).padStart(2, "0")}
+          </span>
+          <span
+            className="mono"
+            style={{
+              fontSize: 10.5,
+              color: "var(--slate-light)",
+              whiteSpace: "nowrap",
+            }}
+            title={r.locations.length === 0 ? "Statewide resource" : "Distance from your city"}
+          >
+            {r.locations.length === 0
+              ? "statewide"
+              : distMiles == null
+                ? "—"
+                : `${distMiles} mi`}
+          </span>
+        </div>
         <div style={{ minWidth: 0 }}>
           <div
             className="display"

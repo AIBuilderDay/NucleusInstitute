@@ -5,6 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from app.model.schema.auth import (
+    ExtractKeywordsRequest,
+    ExtractKeywordsResponse,
     InferInterestsRequest,
     InferInterestsResponse,
     OnboardAgentRequest,
@@ -61,3 +63,18 @@ async def infer_interests(
     Talent row — pure inference, disposable.
     """
     return await service.infer_interests(userinfo=payload.linkedin_userinfo)
+
+
+@router.post("/extract-keywords", response_model=ExtractKeywordsResponse)
+async def extract_keywords(
+    payload: ExtractKeywordsRequest,
+    service: OnboardService = Depends(OnboardService),
+) -> ExtractKeywordsResponse:
+    """Pull concise matchable keywords out of a user's free-form prose.
+
+    The Ecosystem page's InterestModal uses this when the user types in the
+    "Anything else?" textbox — keywords are surfaced as suggestion chips so
+    the user can promote them into their UserMatch and improve scoring against
+    state resources whose descriptions mention the same terms.
+    """
+    return await service.extract_keywords(text=payload.text)

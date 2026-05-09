@@ -105,21 +105,111 @@ export function cityToCounty(city: string): string | null {
   return CITY_TO_COUNTY[k] ?? null;
 }
 
+// — Utah county centroids ([lng, lat]) — for distance filtering. Approximate
+// geographic centers; close enough for hackathon-grade "is this within X
+// miles" decisions.
+const COUNTY_COORDS: Record<string, [number, number]> = {
+  "Beaver": [-113.20, 38.36],
+  "Box Elder": [-113.08, 41.50],
+  "Cache": [-111.74, 41.74],
+  "Carbon": [-110.59, 39.65],
+  "Daggett": [-109.51, 40.89],
+  "Davis": [-112.10, 41.00],
+  "Duchesne": [-110.42, 40.30],
+  "Emery": [-110.70, 38.99],
+  "Garfield": [-111.43, 37.85],
+  "Grand": [-109.57, 38.98],
+  "Iron": [-113.29, 37.86],
+  "Juab": [-112.78, 39.70],
+  "Kane": [-111.89, 37.28],
+  "Millard": [-113.13, 39.07],
+  "Morgan": [-111.57, 41.08],
+  "Piute": [-112.13, 38.34],
+  "Rich": [-111.24, 41.62],
+  "Salt Lake": [-111.92, 40.66],
+  "San Juan": [-109.81, 37.62],
+  "Sanpete": [-111.59, 39.37],
+  "Sevier": [-111.79, 38.74],
+  "Summit": [-110.96, 40.87],
+  "Tooele": [-113.13, 40.51],
+  "Uintah": [-109.52, 40.13],
+  "Utah": [-111.67, 40.12],
+  "Wasatch": [-111.17, 40.33],
+  "Washington": [-113.51, 37.28],
+  "Wayne": [-110.95, 38.32],
+  "Weber": [-112.05, 41.27],
+};
+
+export function countyCoords(county: string): [number, number] | null {
+  return COUNTY_COORDS[county] ?? null;
+}
+
+/**
+ * Haversine distance in miles between two [lng, lat] pairs.
+ * Cheap, no deps. Accurate to a few percent at this scale.
+ */
+export function distanceMiles(
+  a: [number, number],
+  b: [number, number],
+): number {
+  const [lng1, lat1] = a;
+  const [lng2, lat2] = b;
+  const R = 3958.8; // earth radius in miles
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const sinDLat = Math.sin(dLat / 2);
+  const sinDLng = Math.sin(dLng / 2);
+  const h =
+    sinDLat * sinDLat +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * sinDLng * sinDLng;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+/**
+ * Min distance from a city centroid to any of the resource's listed counties.
+ * Returns Infinity if we can't resolve coords on either side.
+ */
+export function resourceDistanceMiles(
+  r: Resource,
+  userCityCoords: [number, number] | null,
+): number {
+  if (!userCityCoords || r.locations.length === 0) return Infinity;
+  let best = Infinity;
+  for (const loc of r.locations) {
+    const c = countyCoords(loc);
+    if (c) {
+      const d = distanceMiles(userCityCoords, c);
+      if (d < best) best = d;
+    }
+  }
+  return best;
+}
+
 interface ScoreParts {
   industry: number;
   geography: number;
   topic: number;
+  keyword: number;
   total: number;
   reasons: string[];
 }
 
+/**
+ * Scoring rewards SPECIFICITY:
+ *   industry = (matched / total industries listed) * 3
+ *
+ * Without this, a resource that lists every industry under the sun gets the
+ * same score for every user as a resource laser-focused on one industry.
+ * Editing the user's sector wouldn't change rankings — the bug we just fixed.
+ */
 export function scoreResource(r: Resource, m: UserMatch): ScoreParts {
   const reasons: string[] = [];
   let industry = 0;
   let geography = 0;
   let topic = 0;
 
-  // — industry overlap —
+  // — industry overlap (specificity-aware) —
   const userIndustries = new Set<string>();
   for (const sector of m.sectors) {
     for (const ind of SECTOR_TO_INDUSTRIES[sector] ?? []) {
@@ -127,24 +217,25 @@ export function scoreResource(r: Resource, m: UserMatch): ScoreParts {
     }
   }
   if (userIndustries.size && r.industries.length) {
-    const hit = r.industries.find((ri) => userIndustries.has(ri));
-    if (hit) {
-      industry = 3;
-      reasons.push(`Industry: ${hit}`);
-    } else if (r.industries.includes("Other")) {
-      industry = 0.5; // weak generic match
+    const matches = r.industries.filter((ri) => userIndustries.has(ri));
+    if (matches.length) {
+      const specificity = matches.length / r.industries.length;
+      industry = specificity * 3;
+      reasons.push(`Industry: ${matches[0]}`);
     }
-  } else if (r.industries.length === 0 || r.industries.includes("Other")) {
-    industry = 0.5; // resource is industry-agnostic — neither hurts nor helps
+  } else if (r.industries.length === 0) {
+    industry = 0.4; // resource is industry-agnostic
   }
 
   // — geography (county) —
   const county = cityToCounty(m.city);
   if (county && r.locations.includes(county)) {
-    geography = 2;
+    // Reward narrowly-scoped geo: county-only listing > statewide listing
+    const geoSpecificity = 1 / Math.max(1, r.locations.length);
+    geography = 1 + geoSpecificity * 2; // 1.0 (statewide) up to 3.0 (single county)
     reasons.push(`Available in ${county} County`);
   } else if (r.locations.length === 0) {
-    geography = 0.5; // statewide / unspecified
+    geography = 0.4; // unscoped — neutral
   }
 
   // — topic (lifecycle / stage) keywords —
@@ -164,8 +255,34 @@ export function scoreResource(r: Resource, m: UserMatch): ScoreParts {
     }
   }
 
-  const total = industry + geography + topic;
-  return { industry, geography, topic, total, reasons };
+  // — keyword match (LLM-extracted from user's free-form text) —
+  // Substring match (case-insensitive) against the resource's searchable
+  // text. Each hit scores +1; capped at +3 so keywords don't drown out
+  // structured signals.
+  let keyword = 0;
+  if (m.keywords.length) {
+    const haystack = (
+      r.title +
+      " " +
+      r.description +
+      " " +
+      r.industries.join(" ") +
+      " " +
+      r.topics.join(" ")
+    ).toLowerCase();
+    const hits: string[] = [];
+    for (const kw of m.keywords) {
+      const k = kw.toLowerCase().trim();
+      if (k && haystack.includes(k)) hits.push(kw);
+    }
+    if (hits.length) {
+      keyword = Math.min(3, hits.length);
+      reasons.push(`Mentions: ${hits.slice(0, 3).join(", ")}`);
+    }
+  }
+
+  const total = industry + geography + topic + keyword;
+  return { industry, geography, topic, keyword, total, reasons };
 }
 
 export interface RankedResource {

@@ -14,20 +14,31 @@ import {
   type LinkedInUserinfo,
 } from "./inferenceApi";
 
-export function EcosystemPage() {
+interface EcosystemPageProps {
+  /**
+   * Called once after a successful LinkedIn / demo handoff so the parent App
+   * can stash the OIDC identity (name + picture) for app-wide display in the
+   * SideNav user badge.
+   */
+  onSignedIn?: (name: string, email: string, picture: string) => void;
+}
+
+export function EcosystemPage({ onSignedIn }: EcosystemPageProps) {
   return (
     <EcosystemProvider>
-      <EcosystemBody />
+      <EcosystemBody onSignedIn={onSignedIn} />
     </EcosystemProvider>
   );
 }
 
-function EcosystemBody() {
+function EcosystemBody({ onSignedIn }: EcosystemPageProps) {
   const { match, setMatch } = useEcosystem();
   const [pendingUserinfo, setPendingUserinfo] = useState<LinkedInUserinfo | null>(null);
   const [editing, setEditing] = useState(false);
   const [handoffError, setHandoffError] = useState<string | null>(null);
   const matchedSectionRef = useRef<HTMLDivElement | null>(null);
+  const onSignedInRef = useRef(onSignedIn);
+  onSignedInRef.current = onSignedIn;
 
   // — Detect ?linkedin_handoff=… or ?demo_signin=1 on mount —
   useEffect(() => {
@@ -42,6 +53,11 @@ function EcosystemBody() {
         try {
           const userinfo = await popLinkedInHandoff(token);
           setPendingUserinfo(userinfo);
+          onSignedInRef.current?.(
+            userinfo.name ?? "",
+            userinfo.email ?? "",
+            userinfo.picture ?? "",
+          );
         } catch (e) {
           setHandoffError(e instanceof Error ? e.message : String(e));
         }
@@ -52,7 +68,7 @@ function EcosystemBody() {
     if (demo) {
       url.searchParams.delete("demo_signin");
       window.history.replaceState({}, "", url.toString());
-      setPendingUserinfo({
+      const fake: LinkedInUserinfo = {
         sub: "demo-1234",
         name: "Eddy Kim",
         given_name: "Eddy",
@@ -60,7 +76,9 @@ function EcosystemBody() {
         email: "eddy@example.com",
         picture: "https://i.pravatar.cc/120?u=eddy",
         locale: "en-US",
-      });
+      };
+      setPendingUserinfo(fake);
+      onSignedInRef.current?.(fake.name, fake.email, fake.picture ?? "");
     }
   }, []);
 
