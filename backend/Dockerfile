@@ -15,4 +15,5 @@ COPY . .
 
 EXPOSE 8765
 
-CMD ["uv", "run", "--no-sync", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8765", "--reload"]
+# See autopilot/Dockerfile for why we sync at startup instead of `--no-sync`.
+CMD ["sh", "-c", "uv sync --frozen && exec uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port 8765 --reload"]

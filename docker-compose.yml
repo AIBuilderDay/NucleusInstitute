@@ -1,7 +1,15 @@
-# Nucleus Institute — full-stack dev compose.
-# Backend FastAPI on 8765, Vite frontend on 5173. Source is bind-mounted
-# for hot reload; anonymous volumes shield .venv / node_modules from the
-# host mount.
+# Nucleus Institute + HEAL Engineering Autopilot — full-stack dev compose.
+#
+# Boots all four services. Source dirs are bind-mounted for hot reload;
+# anonymous volumes shield .venv / node_modules from the host mount. SQLite
+# DBs live inside the bind-mounted source dirs so they persist across
+# container restarts AND across `docker compose down` (but `down -v` wipes
+# the named volumes — venv/node_modules — and `task clean:all` wipes the DBs).
+#
+# All Python services share ONE env file at the repo root (./.env), generated
+# by `task env:generate` from the NUCLEUS 1Password vault. The Vite UIs do
+# NOT consume that file (no secrets) — they get their VITE_* vars via the
+# `environment:` block below.
 
 services:
   backend:
@@ -10,14 +18,58 @@ services:
     ports:
       - "8765:8765"
     env_file:
-      - path: ./backend/.env
+      - path: ./.env
         required: false
     volumes:
       - ./backend:/app
       - backend_venv:/app/.venv
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health').read()"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  autopilot:
+    build: ./autopilot
+    container_name: heal-autopilot
+    ports:
+      - "8766:8766"
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      # Inside the docker network, the backend is reachable by service name.
+      NUCLEUS_BACKEND_URL: "http://backend:8765"
+    volumes:
+      - ./autopilot:/app
+      - autopilot_venv:/app/.venv
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  recruiter:
+    build: ./recruiter
+    container_name: heal-recruiter-ui
+    ports:
+      - "5175:5175"
+    environment:
+      # Browser-side env — picked up by Vite at dev start. The browser hits
+      # the host-mapped autopilot port (localhost:8766), not the service
+      # name, because requests originate from the user's machine.
+      VITE_AUTOPILOT_URL: "http://localhost:8766"
+    volumes:
+      - ./recruiter:/app
+      - recruiter_node_modules:/app/node_modules
+    depends_on:
+      - autopilot
+    restart: unless-stopped
 
   frontend:
+    # Original Nucleus matching UI. Optional for the HEAL autopilot demo —
+    # comment this whole block out if you don't need it.
     build: ./frontend
     container_name: nucleus-frontend
     ports:
@@ -31,4 +83,6 @@ services:
 
 volumes:
   backend_venv:
+  autopilot_venv:
+  recruiter_node_modules:
   frontend_node_modules:
