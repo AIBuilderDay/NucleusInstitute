@@ -33,6 +33,24 @@ export function TopNav({ route, setRoute }: TopNavProps) {
           alignItems: "flex-end",
         }}
       >
+        <button
+          onClick={() => setRoute("browse")}
+          aria-label="Innovate Utah — home"
+          style={{
+            padding: "6px 16px 6px 0",
+            display: "flex",
+            alignItems: "center",
+            background: "transparent",
+            border: 0,
+            cursor: "pointer",
+          }}
+        >
+          <img
+            src="/InnovateUtah.png"
+            alt="Innovate Utah"
+            style={{ height: 38, width: "auto", display: "block" }}
+          />
+        </button>
         {TABS.map((t) => {
           const on = route === t.id;
           return (

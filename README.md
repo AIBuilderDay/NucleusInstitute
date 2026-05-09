@@ -17,20 +17,17 @@ short "how do I run it" version.
 
 ## About the frontend
 
-**The `frontend/` directory is not a real product.** It's a single static
-`index.html` with vanilla JS — no build step, no framework, no package.json.
+The `frontend/` directory is a **work-in-progress** React 19 + Vite + TypeScript
+SPA, styled with Tailwind 4 and managed with pnpm. Page routing is plain
+`useState` — no router library yet. It is partially built: `Browse`, `Match`,
+`My Profile`, and `Join` (a 3-step onboarding wizard) are wired up against the
+real backend, but UX polish, error states, and several flows are still rough.
+Expect rough edges; this is not finished.
 
-Its only purpose is to give a **rough demonstration of what the backend can
-do**: list the seeded Utah talent and startups, create new ones, and run the
-matcher to see explainable match cards. Treat it as a developer poker for the
-API, not a finished UX. It is meant to be **scrapped and replaced** with a
-proper frontend project once the backend contract is solid.
-
-If a field, label, or layout in the demo looks weird, it's almost certainly
-because the field exists on the backend schema and was wired up directly
-without UX polish. The names and shapes come from
+Field names and shapes come straight from the backend Pydantic schemas in
 [backend/app/model/schema/](backend/app/model/schema/) and
-[backend/app/model/schema/enums.py](backend/app/model/schema/enums.py).
+[backend/app/model/schema/enums.py](backend/app/model/schema/enums.py) — if a
+label looks generated, that's because it is.
 
 ---
 
@@ -54,33 +51,17 @@ auto-generated Swagger UI if you want to drive the API directly.
 
 ```bash
 cd frontend
-python3 -m http.server 3000
+pnpm install
+pnpm dev
 ```
 
-Open <http://localhost:3000>. The header shows a green pill when the API is
-reachable; the API base URL is editable in the same header.
+Open <http://localhost:5173>. The footer shows whether the backend is reachable.
+Override the API base with `VITE_API_BASE_URL` if you're not running the
+backend on the default port.
 
-> **Why port 3000?** The backend's CORS allowlist
-> ([backend/app/core/config.py](backend/app/core/config.py)) trusts
-> `http://localhost:3000` and `http://localhost:5173`. Serve the static page
-> from one of those origins. Opening `index.html` via `file://` will be blocked
-> by CORS.
-
----
-
-## What the demo can do
-
-| Tab          | Hits                                                        | Use it for                                                  |
-| ------------ | ----------------------------------------------------------- | ----------------------------------------------------------- |
-| **Browse**   | `GET /api/v1/talent`, `GET /api/v1/startup`                 | See the seeded data; click a card for the detail view.      |
-| **Match**    | `POST /api/v1/match/{talent\|startup}/{id}` and `/compare`  | Pick "I am…", optionally filter by "Looking for…", see scored matches. |
-| **+ Person** | `POST /api/v1/talent`                                       | Form-driven create. Covers the common fields, not investor / service-provider sub-profiles. |
-| **+ Startup**| `POST /api/v1/startup`                                      | Same idea for startups.                                     |
-
-The match cards render the score, per-dimension breakdown, "why it matches"
-reasons, and any blockers (red-tinted when hard filters fail). Compare mode
-shows side-by-side results from every registered matcher — the matchers are
-pluggable, see [PLAN.md §2a](PLAN.md).
+The backend's CORS allowlist
+([backend/app/core/config.py](backend/app/core/config.py)) trusts
+`http://localhost:5173` and `http://localhost:3000`.
 
 ---
 
@@ -134,6 +115,30 @@ The 11 tools: `find_operators`, `find_mentors`, `find_advisors`,
 `find_students_interns`, `find_startups`, `get_talent`, `get_startup`,
 `count` — split by filter schema (one tool per match-flow), not one
 polymorphic `find_talent` with conditional fields.
+
+---
+
+## Extended profile (deferred-load detail view)
+
+Talent and startup rows on the matching path stay lean. Long-form content
+(extended bio, resume URL, hero/cover images, links, projects, highlights)
+lives in sibling `*_profile_extension` tables that the frontend loads on demand
+from a separate endpoint:
+
+```
+GET  /api/v1/talent/{id}/profile     404 if no extension row, else extension fields
+PUT  /api/v1/talent/{id}/profile     upsert the extension
+GET  /api/v1/startup/{id}/profile
+PUT  /api/v1/startup/{id}/profile
+```
+
+ORM models:
+[backend/app/model/database/talent_profile_extension.py](backend/app/model/database/talent_profile_extension.py),
+[backend/app/model/database/startup_profile_extension.py](backend/app/model/database/startup_profile_extension.py).
+
+Match responses do **not** include these fields — keeps `/match` cheap and the
+match-card payload predictable. Future agentic / embedding matchers can read
+the extended text directly from the DB without changing the wire contract.
 
 ---
 
@@ -241,7 +246,7 @@ Walk through this once when you clone the repo.
 3. **Products** tab → request access to **Sign In with LinkedIn using OpenID
    Connect**. This is self-serve and instant. Skip the others — they're gated.
 4. **Auth** tab → **Authorized redirect URLs**: add
-   `http://localhost:8000/api/v1/auth/linkedin/callback` (and a prod URL when
+   `http://localhost:8765/api/v1/auth/linkedin/callback` (and a prod URL when
    you deploy). Must be byte-identical to `LINKEDIN_REDIRECT_URI`.
 5. Copy **Client ID** and **Client Secret** from the same Auth tab.
 6. Generate an HMAC secret for the state cookie:
@@ -250,7 +255,7 @@ Walk through this once when you clone the repo.
    ```
    LINKEDIN_CLIENT_ID="..."
    LINKEDIN_CLIENT_SECRET="..."
-   LINKEDIN_REDIRECT_URI="http://localhost:8000/api/v1/auth/linkedin/callback"
+   LINKEDIN_REDIRECT_URI="http://localhost:8765/api/v1/auth/linkedin/callback"
    LINKEDIN_SCOPES="openid profile email"
    OAUTH_STATE_SECRET="<output of step 6>"
    FRONTEND_ONBOARD_URL="http://localhost:5173/onboard"
@@ -261,15 +266,15 @@ Walk through this once when you clone the repo.
 
 ```bash
 # 1. Start the OAuth dance in a browser:
-open http://localhost:8000/api/v1/auth/linkedin/login
+open http://localhost:8765/api/v1/auth/linkedin/login
 # Approve on LinkedIn → you'll land at FRONTEND_ONBOARD_URL?linkedin_handoff=<token>
 
 # 2. Pop the userinfo (browser request, or curl with the same token):
-curl 'http://localhost:8000/api/v1/auth/linkedin/handoff?token=<token>'
+curl 'http://localhost:8765/api/v1/auth/linkedin/handoff?token=<token>'
 # → {"sub":"...", "name":"...", "email":"...", "picture":"...", ...}
 
 # 3. Run the agent end-to-end (skip steps 1–2 if you just want to test the agent):
-curl -X POST http://localhost:8000/api/v1/onboard/agent \
+curl -X POST http://localhost:8765/api/v1/onboard/agent \
   -H 'content-type: application/json' \
   -d '{
     "linkedin_userinfo": {
@@ -284,7 +289,7 @@ curl -X POST http://localhost:8000/api/v1/onboard/agent \
 # → {"talent_id":"<uuid>", "talent": {...full Talent...}, "agent_notes": "Saved Jane's profile..."}
 
 # 4. Confirm the row exists:
-curl http://localhost:8000/api/v1/talent/<talent_id>
+curl http://localhost:8765/api/v1/talent/<talent_id>
 ```
 
 ### What's deferred
@@ -301,10 +306,8 @@ curl http://localhost:8000/api/v1/talent/<talent_id>
 
 ## What the demo does **not** do
 
-- No auth, no sessions, no users.
-- No edit / delete — only list, get, create.
-- No investor / service-provider sub-profile inputs in the create form.
-- No real styling system — handwritten CSS, will not survive contact with
-  designers.
-
-When you build the real frontend, throw `frontend/` away.
+- No auth, no sessions, no real users — `My Profile` simulates a current user
+  by picking the second seeded talent.
+- No edit / delete on talent or startup core records — only list, get, create
+  (extended profile rows do support `PUT`).
+- No investor / service-provider sub-profile inputs in the Join wizard yet.
