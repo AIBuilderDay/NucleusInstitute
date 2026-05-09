@@ -1,0 +1,318 @@
+@import "tailwindcss";
+
+/*
+  Nucleus design tokens — sampled from nucleusfundutah.com.
+  Inline styles in components reference these CSS custom properties directly.
+*/
+
+:root {
+  --nucleus-blue: #0848b8;
+  --blue-700: #073a98;
+  --blue-600: #0e54cc;
+  --blue-500: #2d6fe0;
+  --blue-400: #4a85e5;
+  --blue-300: #6e97eb;
+  --blue-200: #a8c0f0;
+  --blue-100: #dce6fa;
+  --blue-50: #f2f6fe;
+
+  --pearl: #fafbfd;
+  --pearl-100: #f5f7fb;
+  --pearl-200: #eff2f7;
+  --pearl-300: #e2e6ee;
+
+  --gold: #d89a36;
+  --gold-soft: #f4dea8;
+  --gold-deep: #b07f2a;
+  --gold-faint: #fbf1d9;
+
+  --coral: #e16a4d;
+  --coral-soft: #fbe0d6;
+  --sage: #5a9d8c;
+  --sage-soft: #def0ea;
+  --plum: #7c5aa0;
+  --plum-soft: #ece3f4;
+
+  --graphite: #1a2233;
+  --graphite-muted: #5a6478;
+  --graphite-light: #94a0b5;
+  --white: #ffffff;
+
+  /* Legacy aliases so existing inline-style references keep working */
+  --nucleus-blue-600: var(--blue-700);
+  --nucleus-blue-500: var(--blue-600);
+  --nucleus-blue-400: var(--blue-500);
+  --nucleus-blue-200: var(--blue-200);
+  --wasatch-whisper: var(--blue-50);
+  --whisper-50: var(--pearl);
+  --whisper-200: var(--pearl-200);
+  --whisper-300: var(--pearl-300);
+  --copper: var(--gold);
+  --copper-faint: var(--gold-faint);
+  --copper-soft: var(--gold-soft);
+  --charcoal: var(--graphite);
+  --slate: var(--graphite-muted);
+  --slate-light: var(--graphite-light);
+
+  --sand: var(--blue-50);
+  --sand-50: var(--pearl);
+  --sand-200: var(--pearl-200);
+  --sand-300: var(--pearl-300);
+  --clay: var(--nucleus-blue);
+  --clay-600: var(--blue-700);
+  --clay-500: var(--blue-600);
+  --clay-400: var(--blue-500);
+  --clay-200: var(--blue-100);
+  --ink: var(--graphite);
+  --ink-muted: var(--graphite-muted);
+  --ink-light: var(--graphite-light);
+
+  --color-bg: var(--whisper-50);
+  --color-surface: var(--white);
+  --color-text: var(--charcoal);
+  --color-text-muted: var(--slate);
+  --color-border: var(--whisper-300);
+  --color-border-soft: var(--whisper-200);
+  --color-primary: var(--nucleus-blue);
+  --color-accent: var(--copper);
+
+  --font-display: "Newsreader", Georgia, serif;
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
+
+  --shadow-card: 0 1px 2px rgba(15, 44, 79, 0.04), 0 1px 1px rgba(15, 44, 79, 0.03);
+  --shadow-hover: 0 4px 16px rgba(15, 44, 79, 0.08), 0 1px 2px rgba(15, 44, 79, 0.05);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+input,
+textarea,
+select {
+  font-family: inherit;
+  color: inherit;
+  outline: none;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--nucleus-blue-400) !important;
+  box-shadow: 0 0 0 3px rgba(61, 122, 179, 0.15);
+}
+
+a {
+  color: var(--nucleus-blue-500);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+.display {
+  font-family: var(--font-display);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.tiny-caps {
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--slate);
+  font-weight: 500;
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 10px;
+  box-shadow: var(--shadow-card);
+}
+
+.card-hover {
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+
+.card-hover:hover {
+  border-color: var(--nucleus-blue-200);
+  box-shadow: var(--shadow-hover);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--whisper-200);
+  color: var(--charcoal);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.pill-blue {
+  background: rgba(61, 122, 179, 0.1);
+  color: var(--nucleus-blue);
+  border-color: rgba(61, 122, 179, 0.18);
+}
+
+.pill-copper {
+  background: var(--copper-faint);
+  color: #8a5e1f;
+  border-color: rgba(200, 146, 74, 0.3);
+}
+
+.pill-solid {
+  background: var(--nucleus-blue);
+  color: var(--wasatch-whisper);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  transition: all 0.12s ease;
+  border: 1px solid transparent;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--nucleus-blue);
+  color: var(--wasatch-whisper);
+  border-color: var(--nucleus-blue);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--nucleus-blue-600);
+}
+
+.btn-copper {
+  background: var(--copper);
+  color: var(--white);
+  border-color: var(--copper);
+}
+
+.btn-copper:hover:not(:disabled) {
+  background: #b58241;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--charcoal);
+  border-color: var(--color-border);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--whisper-200);
+  border-color: var(--whisper-300);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.fade-in {
+  animation: fade-in 0.3s ease both;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -400px 0;
+  }
+  100% {
+    background-position: 400px 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--whisper-200) 25%,
+    var(--whisper-50) 50%,
+    var(--whisper-200) 75%
+  );
+  background-size: 800px 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: 4px;
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: var(--whisper-300);
+  border-radius: 2px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--nucleus-blue);
+  cursor: pointer;
+  border: 3px solid var(--wasatch-whisper);
+  box-shadow: 0 0 0 1px var(--nucleus-blue);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--nucleus-blue);
+  cursor: pointer;
+  border: 3px solid var(--wasatch-whisper);
+}
+
+::selection {
+  background: var(--nucleus-blue);
+  color: var(--wasatch-whisper);
+}
